@@ -6,19 +6,19 @@ import warnings
 import cv2
 
 addresses = dict(
-    invaders_left_count=17,
+    # invaders_left_count=17,
     # player_score=[102,104], #4 half-bytes, each representing a digit (0000-9999)
     # num_lives=73,
     player_x=28,  # player x coordinate [35,117]
     enemies_x=26,  # invaders x coordinate (left most column) [23,130]
     enemies_y=16,  # invaders y coordinate (from the top)
-    ball_y=85,  # player shot y coordinate
-    ball_x=87,  # player shot x coordinate
+    # ball_y=85,  # player shot y coordinate
+    # ball_x=87,  # player shot x coordinate
     missile1_y=81,  # invader shot 1 y coordinate
     missile1_x=83,  # invader shot 1 x coordinate
     missile2_y=82,  # invader shot 2 y coordinate
     missile2_x=84,  # invader shot 2 x coordinate
-    spaceship_x=30,
+    # spaceship_x=30,
     # obstacles=[43,70], #3 sequences of 9 bytes representing each one the obstacle pixels (0 destroyed, 1 intact),
     # (relevant bits are only 56 out of 72(9 * 8 bits) total, we could save 2 bytes for each obstacle representation
     # this would shrink the possible states for obstacles from 2^216 to 2^168)
@@ -106,11 +106,27 @@ class RawRAMWrapper(gym.ObservationWrapper):
         return np.array(obs, dtype=np.float32) / 255.0
 
 
+def invader_speed_norm(
+    n_alive,
+    n_total=36,
+    v_min_px=2.0,
+    v_max_px=120.0,
+    output_min=0.1,
+    output_max=1.0,
+    k=1.5,
+):
+    progress = 1 - n_alive / float(n_total)
+    v_px = v_min_px + (v_max_px - v_min_px) * (progress**k)
+    return output_min + (output_max - output_min) * (
+        (v_px - v_min_px) / (v_max_px - v_min_px)
+    )
+
+
 class DiscreteSI(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         # observation_shape = [255]*(len(addresses.keys())-3) + [255]*9*3 + [255]*6 + [2,2]
-        self.observation_space = Box(low=0.0, high=1.0, shape=(73,), dtype=np.float32)
+        self.observation_space = Box(low=0.0, high=1.0, shape=(68,), dtype=np.float32)
 
     def observation(self, obs):
         # gray_image = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
@@ -119,27 +135,25 @@ class DiscreteSI(gym.ObservationWrapper):
         # return [obs[i]/255. for i in range(len(obs))]
         res = []
         rows = []
+        invaders_left_count = 0.0
         obstacles_showing = (obs[24] >> 6) & 1
         for key in addresses.keys():
             address = addresses[key]
-            if "_x" in key or "_y" in key:
+            if key == "player_x":
                 value = int(obs[address])
-                # res.append( ((value-23)/(130-23))*2. - 1.)
                 res.append((value / 255) * 2.0 - 1.0)
             elif key == "invaders_left_count":
                 value = int(obs[address])
-                res.append((1.0 - (value - 1.0) / 36.0))
+                invaders_left_count = value
             elif "row" in key:
                 row = obs[address]
                 res.extend([(row >> i) & 1 for i in range(6)])
-            else:
-                res.append(obs[address] / 255)
+            # else:
+            #     res.append(obs[address] / 255)
 
+        speed = invader_speed_norm(invaders_left_count)
         # invaders direction
-        res.append(-1.0 if (obs[24] >> 1) & 1 == 0 else 1.0)
-
-        # spaceship direction
-        res.append(-1.0 if obs[24] & 1 == 0 else 1.0)
+        res.append(-speed if (obs[24] >> 1) & 1 == 0 else speed)
 
         if obstacles_showing:
             for i in range(3):
@@ -149,6 +163,20 @@ class DiscreteSI(gym.ObservationWrapper):
                 res.extend([(r_h >> i) & 1 for i in range(8)])
         else:
             res.extend([0] * 24)
+
+        player_x = int(obs[addresses["player_x"]])
+        enemies_x = int(obs[addresses["enemies_x"]]) - player_x
+        missile1_x = int(obs[addresses["missile1_x"]]) - player_x
+        missile2_x = int(obs[addresses["missile2_x"]]) - player_x
+
+        res.append(enemies_x / 255)
+        res.append(missile1_x / 255)
+        res.append(missile2_x / 255)
+
+        res.append(obs[addresses["enemies_y"]] / 255)
+        res.append(obs[addresses["missile1_y"]] / 255)
+        res.append(obs[addresses["missile2_y"]] / 255)
+
         return res
 
 
