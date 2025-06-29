@@ -24,7 +24,6 @@ from collections import deque
 from config import (
     lr,
     device,
-    batch_size,
     async_update_step,
     memory_size,
     obs_mode,
@@ -37,6 +36,7 @@ from config import (
 
 first_evaluation = True
 q_evaluation_states = []
+
 
 def play_game(env, net, num_games=10):
     global first_evaluation
@@ -63,7 +63,7 @@ def play_game(env, net, num_games=10):
             done = term or trunc or steps >= max_evaluation_steps
     first_evaluation = False
     avg_q = net(torch.cat(q_evaluation_states).to(device)).mean().item()
-    return (avg_score / num_games,avg_q)
+    return (avg_score / num_games, avg_q)
 
 
 def main():
@@ -96,6 +96,8 @@ def main():
     # optimizer = SharedAdam(online_net.parameters(), lr=lr,eps=0.01,betas=(.95,.95))
 
     optimizer = SharedRMSprop(online_net.parameters(), lr=lr)
+    optimizer.share_memory()
+
     global_epoch, global_update_step, global_step, res_queue, init_barrier = (
         mp.Value("i", 0),
         mp.Value("i", 0),
@@ -103,7 +105,7 @@ def main():
         mp.Queue(),
         mp.Barrier(N),
     )
-    run_name = f"{obs_mode}/{lr}_{batch_size}_{memory_size}_{update_target}_{max_steps}_{async_update_step}_{layer_size}"
+    run_name = f"{obs_mode}/{lr}_{memory_size}_{update_target}_{max_steps}_{async_update_step}_{layer_size}"
     writer = SummaryWriter(f"logs/{run_name}")
     epsilon_tags = [f"log/epsilon/w{i}" for i in range(N)]
     layout = {"epsilon": {run_name: ["multiline", epsilon_tags]}}
@@ -133,7 +135,7 @@ def main():
     ]
     [w.start() for w in workers]
     res = []
-    max_score,avg_q = play_game(env, eval_net)
+    max_score, avg_q = play_game(env, eval_net)
     writer.add_scalar("log/score", max_score, 0)
     writer.add_scalar("log/avg_q", avg_q, 0)
     print(f"Epoch: 0, Score: {max_score}, Avg Q {avg_q}")
@@ -143,10 +145,10 @@ def main():
         r = res_queue.get()
         if r is not None:
             res.append(r)
-            [w_name, epoch, epsilon] = r
-            if epoch:
+            [w_name, epoch, evaluate, epsilon] = r
+            if evaluate:
                 eval_net.load_state_dict(online_net.state_dict())
-                score,avg_q = play_game(
+                score, avg_q = play_game(
                     env,
                     eval_net,
                 )
@@ -162,10 +164,12 @@ def main():
                 writer.add_scalar("log/score", score, epoch)
                 writer.add_scalar("log/avg_q", avg_q, epoch)
                 print(f"Epoch: {epoch}, Score: {score}, Avg Q: {avg_q}")
-            writer.flush()  
+            else:
+                writer.add_scalar("log/epsilon/" + w_name, epsilon, epoch)
+            writer.flush()
         else:
             break
-        
+
     [w.join() for w in workers]
     [w.close() for w in workers]
 

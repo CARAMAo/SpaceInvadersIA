@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from config import gamma, device,layer_size
+from config import gamma, device, layer_size
 
 
 class QNet(nn.Module):
@@ -13,9 +13,8 @@ class QNet(nn.Module):
         self.num_hidden = layer_size
 
         self.fc1 = nn.Linear(num_inputs, self.num_hidden)
-        self.fc2 = nn.Linear(self.num_hidden,self.num_hidden)
-        self.fc3 = nn.Linear(self.num_hidden,self.num_hidden)
-        self.fc4 = nn.Linear(self.num_hidden, self.num_outputs)
+        self.fc2 = nn.Linear(self.num_hidden, self.num_hidden)
+        self.fc3 = nn.Linear(self.num_hidden, self.num_outputs)
         self.random_init(seed=42)
 
     def random_init(self, seed=None):
@@ -40,8 +39,7 @@ class QNet(nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        x = self.fc4(x)
+        x = self.fc3(x)
         return x
 
 

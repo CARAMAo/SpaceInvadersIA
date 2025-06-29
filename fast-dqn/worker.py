@@ -28,7 +28,9 @@ class Worker(mp.Process):
     ):
         super(Worker, self).__init__(daemon=True)
 
-        self.env = make_env(obs_mode, frame_skip=4, episodic_life=True)
+        self.env = make_env(
+            obs_mode, frame_skip=4, random_starts=True, episodic_life=True
+        )
 
         self.name = "w%i" % name
         (
@@ -43,10 +45,10 @@ class Worker(mp.Process):
             target_net,
             optimizer,
         )
-        self.memory = ReplayMemory(memory_size)
+        self.memory = ReplayMemory(async_update_step)
 
-    def record(self, epoch, net_state_dict, epsilon=None):
-        self.res_queue.put([self.name, epoch, epsilon])
+    def record(self, epoch, evaluate, epsilon=None):
+        self.res_queue.put([self.name, epoch, evaluate, epsilon])
 
     def update_target_model(self):
         self.target_net.load_state_dict(self.online_net.state_dict())
@@ -68,7 +70,7 @@ class Worker(mp.Process):
         # on the "older" target_net; selecting their best reward with max(1).values
         # This is merged based on the mask, such that we'll have either the expected
         # state value or 0 in case the state was final.
-        next_state_values = torch.zeros(batch_size, device=device)
+        next_state_values = torch.zeros(async_update_step, device=device)
         with torch.no_grad():
             next_state_values = self.target_net(s1).max(1).values
             # Compute the expected Q values
@@ -80,11 +82,11 @@ class Worker(mp.Process):
         loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
 
         # Optimize the model
-        self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
+        self.optimizer.zero_grad()
 
     def get_action(self, state, epsilon):
         if np.random.rand() <= epsilon:
@@ -96,19 +98,14 @@ class Worker(mp.Process):
                 return self.online_net(state.to(device)).max(1).indices.view(1, 1)
 
     def run(self):
-        self.online_net.random_init(seed=42)
-        self.target_net.random_init(seed=42)
 
-        self.init_barrier.wait()
-
-        # period = 100_000
-        # amp = epsilon_start - epsilon_end
-        # phase = np.random.rand()
         global_update_step = 0
         steps = 0
-        # norm_value = 1 - abs(2*phase - 1)
-        # epsilon = epsilon_end + (epsilon_start - epsilon_end)*norm_value
-        epsilon = epsilon_start
+
+        epsilon_update_target = 50_000
+
+        epsilon = np.random.uniform(epsilon_end, epsilon_start)
+
         while self.global_epoch.value < training_epochs:
 
             done = False
@@ -133,32 +130,35 @@ class Worker(mp.Process):
                 score += reward
                 state = next_state
 
-                if len(self.memory) > pre_training:
-                    with self.global_step.get_lock():
-                        self.global_step.value += 1
-                        global_step = self.global_step.value
-                        if global_step % steps_per_epoch == 0:
-                            self.global_epoch.value += 1
-                            self.record(
-                                self.global_epoch.value,
-                                epsilon,
-                            )
+                with self.global_step.get_lock():
+                    self.global_step.value += 1
+                    global_step = self.global_step.value
+                    if global_step % steps_per_epoch == 0:
+                        self.global_epoch.value += 1
+                        self.record(
+                            self.global_epoch.value,
+                            True,
+                            epsilon,
+                        )
 
-                    steps += 1
+                steps += 1
 
-                    # cycle_pos = ((steps/period) + phase)%1.0
-                    # norm_value = 1 - abs(2*cycle_pos - 1)
-                    # epsilon = epsilon_end + (epsilon_start - epsilon_end)*norm_value
+                # cycle_pos = ((steps/period) + phase)%1.0
+                # norm_value = 1 - abs(2*cycle_pos - 1)
+                # epsilon = epsilon_end + (epsilon_start - epsilon_end)*norm_value
 
-                    epsilon -= eps_decay
-                    epsilon = max(epsilon, epsilon_end)
+                if steps % epsilon_update_target == 0:
+                    epsilon = np.random.uniform(0.05, 0.8)
 
+                epsilon *= 0.99
+                epsilon = max(epsilon, epsilon_end)
 
-                    if done or steps % async_update_step == 0:
-                        s, a, r, s1, done_t = self.memory.sample(batch_size)
-                        self.optimize_model(s, a, r, s1, done_t)
-                    if global_step % update_target == 0:
-                        self.update_target_model()
+                if done or steps % async_update_step == 0:
+                    s, a, r, s1, done_t = self.memory.sample(async_update_step)
+                    self.memory = ReplayMemory(async_update_step)
+                    self.optimize_model(s, a, r, s1, done_t)
+                if global_step % update_target == 0:
+                    self.update_target_model()
 
         self.res_queue.put(None)
         print(self.name, "steps", steps, "updates", global_update_step)
