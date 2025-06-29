@@ -1,12 +1,12 @@
 import gym
 from gym.utils import play
+from si_wrappers import make_env
 
 
+def callback(*args, **kwargs):
+    print(args[0])
 
-def callback(*args,**kwargs):
-	print(args[0][81:85])
 
+env = make_env("condensed_ram")
 
-env = gym.make("SpaceInvaders-ramNoFrameskip-v4",render_mode="rgb_array")
-
-play.play(env,zoom=2,fps=10,callback=callback)
+play.play(env, zoom=2, fps=10, callback=callback)

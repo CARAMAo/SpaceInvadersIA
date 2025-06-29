@@ -6,7 +6,7 @@ def getenv(key, default, cast):
     return cast(os.environ.get(key, default))
 
 
-lr = getenv("LR", 1e-3, float)
+lr = getenv("LR", 1e-5, float)
 update_target = getenv("UPDATE_TARGET", 1_000, int)
 async_update_step = 4
 obs_mode = os.environ.get("OBS_MODE", "condensed_ram")

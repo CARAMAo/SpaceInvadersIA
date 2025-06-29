@@ -78,14 +78,16 @@ class Worker(mp.Process):
         # Compute Huber loss
         criterion = torch.nn.SmoothL1Loss()
 
-        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+        loss = criterion(
+            state_action_values, expected_state_action_values.unsqueeze(1).detach()
+        )
 
+        self.optimizer.zero_grad()
         # Optimize the model
         loss.backward()
         # In-place gradient clipping
         torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
-        self.optimizer.zero_grad()
 
     def get_action(self, state, epsilon):
         if np.random.rand() <= epsilon:
@@ -103,7 +105,7 @@ class Worker(mp.Process):
 
         epsilon_update_target = 50_000
 
-        epsilon = np.random.uniform(epsilon_end, epsilon_start)
+        epsilon = np.random.uniform(0.05, epsilon_start)
 
         self.record(0, False, epsilon)
 
@@ -152,7 +154,7 @@ class Worker(mp.Process):
                     epsilon = np.random.uniform(0.05, 0.8)
                     self.record(steps, False, epsilon)
 
-                epsilon *= 0.99999
+                epsilon *= 0.99
                 epsilon = max(epsilon, epsilon_end)
 
                 if done or steps % async_update_step == 0:

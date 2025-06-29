@@ -6,7 +6,6 @@ import warnings
 import cv2
 
 addresses = dict(
-    # invaders_left_count=17,
     # player_score=[102,104], #4 half-bytes, each representing a digit (0000-9999)
     # num_lives=73,
     player_x=28,  # player x coordinate [35,117]
@@ -18,6 +17,7 @@ addresses = dict(
     missile1_x=83,  # invader shot 1 x coordinate
     missile2_y=82,  # invader shot 2 y coordinate
     missile2_x=84,  # invader shot 2 x coordinate
+    invaders_left_count=17,
     # spaceship_x=30,
     # obstacles=[43,70], #3 sequences of 9 bytes representing each one the obstacle pixels (0 destroyed, 1 intact),
     # (relevant bits are only 56 out of 72(9 * 8 bits) total, we could save 2 bytes for each obstacle representation
@@ -134,50 +134,51 @@ class DiscreteSI(gym.ObservationWrapper):
         # return gray_image
         # return [obs[i]/255. for i in range(len(obs))]
         res = []
-        rows = []
-        invaders_left_count = 0.0
+
         obstacles_showing = (obs[24] >> 6) & 1
         for key in addresses.keys():
             address = addresses[key]
-            if key == "player_x":
+            if "_x" in key:
                 value = int(obs[address])
-                res.append((value / 255) * 2.0 - 1.0)
+                res.append((value / 160) * 2.0 - 1.0)
+            elif "_y" in key:
+                value = int(obs[address])
+                res.append((value / 210) if value != 246 else 0.0)
             elif key == "invaders_left_count":
                 value = int(obs[address])
-                invaders_left_count = value
+                res.append((value / 36.0))
             elif "row" in key:
                 row = obs[address]
-                res.extend([(row >> i) & 1 for i in range(6)])
+                res.extend([float((row >> i) & 1) for i in range(6)])
             # else:
             #     res.append(obs[address] / 255)
 
-        speed = invader_speed_norm(invaders_left_count)
         # invaders direction
-        res.append(-speed if (obs[24] >> 1) & 1 == 0 else speed)
+        res.append(float((obs[24] >> 1) & 1) * 2.0 - 1.0)
 
         if obstacles_showing:
             for i in range(3):
                 r_h = 0
                 for row in obs[43 + i * 9 : 52 + i * 9]:
                     r_h = r_h | row
-                res.extend([(r_h >> i) & 1 for i in range(8)])
+                res.extend([float((r_h >> i) & 1) for i in range(8)])
         else:
             res.extend([0] * 24)
 
-        player_x = int(obs[addresses["player_x"]])
-        enemies_x = int(obs[addresses["enemies_x"]]) - player_x
-        missile1_x = int(obs[addresses["missile1_x"]]) - player_x
-        missile2_x = int(obs[addresses["missile2_x"]]) - player_x
+        # player_x = int(obs[addresses["player_x"]])
+        # enemies_x = int(obs[addresses["enemies_x"]]) - player_x
+        # missile1_x = int(obs[addresses["missile1_x"]]) - player_x
+        # missile2_x = int(obs[addresses["missile2_x"]]) - player_x
 
-        res.append(enemies_x / 255)
-        res.append(missile1_x / 255)
-        res.append(missile2_x / 255)
+        # res.append(enemies_x / 255)
+        # res.append(missile1_x / 255)
+        # res.append(missile2_x / 255)
 
-        res.append(obs[addresses["enemies_y"]] / 255)
-        res.append(obs[addresses["missile1_y"]] / 255)
-        res.append(obs[addresses["missile2_y"]] / 255)
+        # res.append(obs[addresses["enemies_y"]] / 255)
+        # res.append(obs[addresses["missile1_y"]] / 255)
+        # res.append(obs[addresses["missile2_y"]] / 255)
 
-        res.append(obs[42] != 0)
+        # res.append(float(obs[42] == 0))
         return res
 
 
