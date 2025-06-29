@@ -25,12 +25,9 @@ from config import (
     lr,
     device,
     async_update_step,
-    memory_size,
     obs_mode,
     update_target,
-    max_evaluation_steps,
     frame_skip,
-    max_steps,
     layer_size,
 )
 
@@ -60,7 +57,7 @@ def play_game(env, net, num_games=10):
             if first_evaluation and len(q_evaluation_states) < 1024:
                 q_evaluation_states.append(state)
             avg_score += reward
-            done = term or trunc or steps >= max_evaluation_steps
+            done = term or trunc
     first_evaluation = False
     avg_q = net(torch.cat(q_evaluation_states).to(device)).mean().item()
     return (avg_score / num_games, avg_q)
@@ -105,7 +102,7 @@ def main():
         mp.Queue(),
         mp.Barrier(N),
     )
-    run_name = f"{obs_mode}/{lr}_{memory_size}_{update_target}_{max_steps}_{async_update_step}_{layer_size}"
+    run_name = f"{obs_mode}/{lr}_{update_target}_{async_update_step}_{layer_size}"
     writer = SummaryWriter(f"logs/{run_name}")
     epsilon_tags = [f"log/epsilon/w{i}" for i in range(N)]
     layout = {"epsilon": {run_name: ["multiline", epsilon_tags]}}
@@ -126,7 +123,6 @@ def main():
             global_epoch,
             global_update_step,
             global_step,
-            memory_size,
             res_queue,
             init_barrier,
             i,
@@ -139,7 +135,7 @@ def main():
     writer.add_scalar("log/score", max_score, 0)
     writer.add_scalar("log/avg_q", avg_q, 0)
     print(f"Epoch: 0, Score: {max_score}, Avg Q {avg_q}")
-    step = 0
+
     while True:
 
         r = res_queue.get()

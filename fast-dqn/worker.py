@@ -21,7 +21,6 @@ class Worker(mp.Process):
         global_epoch,
         global_update_steps,
         global_step,
-        memory_size,
         res_queue,
         init_barrier,
         name,
@@ -55,11 +54,11 @@ class Worker(mp.Process):
 
     def optimize_model(self, s, a, r, s1, done):
 
-        s = torch.cat(s).to(device)
-        a = torch.cat(a).to(device)
-        r = torch.cat(r).to(device)
-        s1 = torch.cat(s1).to(device)
-        done = torch.cat(done).to(device)
+        s = torch.cat(s).to(device=device, dtype=torch.float32)
+        a = torch.cat(a).to(device=device, dtype=torch.long)
+        r = torch.cat(r).to(device=device, dtype=torch.float32)
+        s1 = torch.cat(s1).to(device=device, dtype=torch.float32)
+        done = torch.cat(done).to(device=device, dtype=torch.float32)
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
@@ -106,6 +105,8 @@ class Worker(mp.Process):
 
         epsilon = np.random.uniform(epsilon_end, epsilon_start)
 
+        self.record(0, False, epsilon)
+
         while self.global_epoch.value < training_epochs:
 
             done = False
@@ -113,7 +114,7 @@ class Worker(mp.Process):
             score = 0
             (state, _) = self.env.reset()
 
-            state = torch.Tensor(state).unsqueeze(0)
+            state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
 
             while not done:
 
@@ -122,9 +123,9 @@ class Worker(mp.Process):
 
                 done = term or trunc
 
-                next_state = torch.Tensor(next_state).unsqueeze(0)
-                reward = torch.Tensor([reward])
-                done_t = torch.Tensor([not done])
+                next_state = torch.tensor(next_state, dtype=torch.float32).unsqueeze(0)
+                reward = torch.tensor([reward], dtype=torch.float32)
+                done_t = torch.tensor([not done], dtype=torch.float32)
                 self.memory.push(state, action, reward, next_state, done_t)
 
                 score += reward
@@ -149,14 +150,16 @@ class Worker(mp.Process):
 
                 if steps % epsilon_update_target == 0:
                     epsilon = np.random.uniform(0.05, 0.8)
+                    self.record(steps, False, epsilon)
 
-                epsilon *= 0.99
+                epsilon *= 0.99999
                 epsilon = max(epsilon, epsilon_end)
 
                 if done or steps % async_update_step == 0:
-                    s, a, r, s1, done_t = self.memory.sample(async_update_step)
-                    self.memory = ReplayMemory(async_update_step)
-                    self.optimize_model(s, a, r, s1, done_t)
+                    if len(self.memory) > 0:
+                        s, a, r, s1, done_t = self.memory.sample(async_update_step)
+                        self.memory = ReplayMemory(async_update_step)
+                        self.optimize_model(s, a, r, s1, done_t)
                 if global_step % update_target == 0:
                     self.update_target_model()
 

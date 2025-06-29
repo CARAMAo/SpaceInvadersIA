@@ -126,7 +126,7 @@ class DiscreteSI(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         # observation_shape = [255]*(len(addresses.keys())-3) + [255]*9*3 + [255]*6 + [2,2]
-        self.observation_space = Box(low=0.0, high=1.0, shape=(68,), dtype=np.float32)
+        self.observation_space = Box(low=0.0, high=1.0, shape=(69,), dtype=np.float32)
 
     def observation(self, obs):
         # gray_image = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
@@ -177,6 +177,7 @@ class DiscreteSI(gym.ObservationWrapper):
         res.append(obs[addresses["missile1_y"]] / 255)
         res.append(obs[addresses["missile2_y"]] / 255)
 
+        res.append(obs[42] != 0)
         return res
 
 
