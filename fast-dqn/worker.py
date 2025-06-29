@@ -76,17 +76,17 @@ class Worker(mp.Process):
             expected_state_action_values = (done * next_state_values * gamma) + r
 
         # Compute Huber loss
-        criterion = torch.nn.SmoothL1Loss()
+        criterion = torch.nn.MSELoss()
 
         loss = criterion(
-            state_action_values, expected_state_action_values.unsqueeze(1).detach()
+            state_action_values, expected_state_action_values.unsqueeze(1)
         )
 
         self.optimizer.zero_grad()
         # Optimize the model
         loss.backward()
         # In-place gradient clipping
-        torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 1.0)
+        torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 5.0)
         self.optimizer.step()
 
     def get_action(self, state, epsilon):
@@ -99,13 +99,17 @@ class Worker(mp.Process):
                 return self.online_net(state.to(device)).max(1).indices.view(1, 1)
 
     def run(self):
-
+        self.online_net.random_init(seed=42)
+        self.target_net.load_state_dict(self.online_net.state_dict())
+        self.init_barrier.wait()
         global_update_step = 0
         steps = 0
 
-        epsilon_update_target = 50_000
+        epsilon_update_target = 250_000
 
         epsilon = np.random.uniform(0.05, epsilon_start)
+
+        eps_decay = (epsilon_start - .05)/250_000
 
         self.record(0, False, epsilon)
 
@@ -154,7 +158,7 @@ class Worker(mp.Process):
                     epsilon = np.random.uniform(0.05, 0.8)
                     self.record(steps, False, epsilon)
 
-                epsilon *= 0.99
+                epsilon -= eps_decay
                 epsilon = max(epsilon, epsilon_end)
 
                 if done or steps % async_update_step == 0:
@@ -162,7 +166,8 @@ class Worker(mp.Process):
                         s, a, r, s1, done_t = self.memory.sample(async_update_step)
                         self.memory = ReplayMemory(async_update_step)
                         self.optimize_model(s, a, r, s1, done_t)
-                if global_step % update_target == 0:
+                        self.record(steps,False,epsilon)
+                if steps % update_target == 0:
                     self.update_target_model()
 
         self.res_queue.put(None)

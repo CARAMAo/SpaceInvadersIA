@@ -148,14 +148,13 @@ def main():
                     env,
                     eval_net,
                 )
-                if score > max_score:
-                    max_score = score
-                    if not os.path.exists(f"checkpoints/{run_name}/"):
-                        os.makedirs(f"checkpoints/{run_name}/")
-                    torch.save(
-                        {"model": eval_net.state_dict(), "step": epoch},
-                        f"checkpoints/{run_name}/checkpoint{epoch}",
-                    )
+                
+                if not os.path.exists(f"checkpoints/{run_name}/"):
+                    os.makedirs(f"checkpoints/{run_name}/")
+                torch.save(
+                    {"model": eval_net.state_dict(), "step": epoch},
+                    f"checkpoints/{run_name}/checkpoint{epoch}",
+                )
                 # writer.add_scalar("log/avg_train_score", avg_train_score, epoch)
                 writer.add_scalar("log/score", score, epoch)
                 writer.add_scalar("log/avg_q", avg_q, epoch)

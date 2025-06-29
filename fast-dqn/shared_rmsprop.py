@@ -3,7 +3,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from torch import optim
-
+from config import device
 
 # Non-centered RMSprop update with shared statistics (without momentum)
 class SharedRMSprop(optim.RMSprop):
@@ -24,8 +24,8 @@ class SharedRMSprop(optim.RMSprop):
         for group in self.param_groups:
             for p in group["params"]:
                 state = self.state[p]
-                state["step"] = p.data.new().resize_(1).zero_()
-                state["square_avg"] = p.data.new().resize_as_(p.data).zero_()
+                state["step"] = p.data.new().resize_(1).zero_().to(device)
+                state["square_avg"] = p.data.new().resize_as_(p.data).zero_().to(device)
 
     def share_memory(self):
         for group in self.param_groups:

@@ -126,7 +126,7 @@ class DiscreteSI(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         # observation_shape = [255]*(len(addresses.keys())-3) + [255]*9*3 + [255]*6 + [2,2]
-        self.observation_space = Box(low=0.0, high=1.0, shape=(69,), dtype=np.float32)
+        self.observation_space = Box(low=0.0, high=1.0, shape=(70,), dtype=np.float32)
 
     def observation(self, obs):
         # gray_image = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
@@ -140,7 +140,7 @@ class DiscreteSI(gym.ObservationWrapper):
             address = addresses[key]
             if "_x" in key:
                 value = int(obs[address])
-                res.append((value / 160) * 2.0 - 1.0)
+                res.append((value / 160))
             elif "_y" in key:
                 value = int(obs[address])
                 res.append((value / 210) if value != 246 else 0.0)
@@ -164,21 +164,9 @@ class DiscreteSI(gym.ObservationWrapper):
                 res.extend([float((r_h >> i) & 1) for i in range(8)])
         else:
             res.extend([0] * 24)
+	
+        res.append(float((obs[77] & 0b11) > 0)) #shooting
 
-        # player_x = int(obs[addresses["player_x"]])
-        # enemies_x = int(obs[addresses["enemies_x"]]) - player_x
-        # missile1_x = int(obs[addresses["missile1_x"]]) - player_x
-        # missile2_x = int(obs[addresses["missile2_x"]]) - player_x
-
-        # res.append(enemies_x / 255)
-        # res.append(missile1_x / 255)
-        # res.append(missile2_x / 255)
-
-        # res.append(obs[addresses["enemies_y"]] / 255)
-        # res.append(obs[addresses["missile1_y"]] / 255)
-        # res.append(obs[addresses["missile2_y"]] / 255)
-
-        # res.append(float(obs[42] == 0))
         return res
 
 
@@ -245,7 +233,7 @@ def make_env(
     env_kwargs = {"render_mode": "human" if render else "rgb_array"}
 
     if obs_mode == "image":
-        env = gym.make("SpaceInvaders-NoFrameskip-v4", **env_kwargs)
+        env = gym.make("SpaceInvadersNoFrameskip-v4", **env_kwargs)
         env = ImageObservationWrapper(env)
         env = gym.wrappers.FrameStack(env, frame_stack)
     elif obs_mode == "ram":

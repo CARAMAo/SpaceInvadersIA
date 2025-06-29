@@ -15,7 +15,7 @@ class QNet(nn.Module):
         self.fc1 = nn.Linear(num_inputs, self.num_hidden)
         self.fc2 = nn.Linear(self.num_hidden, self.num_hidden)
         self.fc3 = nn.Linear(self.num_hidden, self.num_outputs)
-        self.random_init(seed=42)
+        self.random_init()
 
     def random_init(self, seed=None):
         if seed is not None:
