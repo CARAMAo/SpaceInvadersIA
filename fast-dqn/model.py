@@ -2,46 +2,28 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from config import gamma, device, layer_size
-
+from config import gamma,device
 
 class QNet(nn.Module):
     def __init__(self, num_inputs, num_outputs):
         super(QNet, self).__init__()
         self.num_inputs = num_inputs
         self.num_outputs = num_outputs
-        self.num_hidden = layer_size
+        self.num_hidden = 128
 
         self.fc1 = nn.Linear(num_inputs, self.num_hidden)
         self.fc2 = nn.Linear(self.num_hidden, self.num_hidden)
-        self.fc3 = nn.Linear(self.num_hidden, self.num_outputs)
-        self.random_init(seed=42)
-
-    def random_init(self, seed=None):
-        if seed is not None:
-            torch.manual_seed(seed)  # Imposta il seed per PyTorch
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed(seed)  # Imposta il seed per CUDA
+        self.fc3 = nn.Linear(self.num_hidden,num_outputs)
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
 
-    def zero_init(self):
-        """
-        Inizializza tutti i pesi e i bias a zero.
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.constant_(m.weight, 0)  # Inizializza i pesi a zero
-                nn.init.constant_(m.bias, 0)  # Inizializza i bias a zero
-
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
+        qvalue = self.fc3(x)
+        return qvalue
 
 class CNNQNet(nn.Module):
     def __init__(self, in_channels=4, n_actions=6):
@@ -69,7 +51,6 @@ class CNNQNet(nn.Module):
         x = F.relu(self.bn3(self.conv3(x)))
         x = F.relu(self.fc4(x.view(x.size(0), -1)))
         return self.head(x)
-
     # def optimize_model(online_net, target_net, optimizer, batch):
     #     states = torch.stack(batch.state)
     #     next_states = torch.stack(batch.next_state)
@@ -85,14 +66,17 @@ class CNNQNet(nn.Module):
 
     #     target = rewards + masks * gamma * next_pred.max(1)[0]
 
+
     #     criterion = nn.MSELoss()
     #     loss = criterion(pred,target)
+
 
     #     optimizer.zero_grad()
     #     loss.backward()
 
     #     torch.nn.utils.clip_grad_value_(online_net.parameters(), 10)
     #     optimizer.step()
+
 
     #     return loss
 

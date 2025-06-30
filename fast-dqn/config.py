@@ -1,24 +1,18 @@
-import os
+
 import torch
 
-
-def getenv(key, default, cast):
-    return cast(os.environ.get(key, default))
-
-
-lr = getenv("LR", 1e-5, float)
-update_target = getenv("UPDATE_TARGET", 1_000, int)
-async_update_step = 4
-obs_mode = os.environ.get("OBS_MODE", "condensed_ram")
-layer_size = getenv("LAYER_SIZE", 128, int)
-
 gamma = 0.99
-epsilon_start = 0.9
-epsilon_end = 0.1
+batch_size = 128
+memory_size = 500_000
+pre_training = memory_size//10 # 10% of memory_size
+lr = 2.5e-5
+epsilon_start = .9
+epsilon_end = .1
+eps_decay =  (epsilon_start-epsilon_end)/500_000.
 
-device = torch.device("cpu")
+log_interval = 100
+update_target = 10_000
+async_update_step = 8
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-frame_skip = 3 if obs_mode == "image" else 4
-
-steps_per_epoch = 250_000
-training_epochs = 100
+max_steps = 10_000_000

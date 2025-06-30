@@ -6,18 +6,18 @@ import warnings
 import cv2
 
 addresses = dict(
+    invaders_left_count=17,
     # player_score=[102,104], #4 half-bytes, each representing a digit (0000-9999)
     # num_lives=73,
     player_x=28,  # player x coordinate [35,117]
     enemies_x=26,  # invaders x coordinate (left most column) [23,130]
     enemies_y=16,  # invaders y coordinate (from the top)
-    # ball_y=85,  # player shot y coordinate
-    # ball_x=87,  # player shot x coordinate
+    ball_y=85,  # player shot y coordinate
+    ball_x=87,  # player shot x coordinate
     missile1_y=81,  # invader shot 1 y coordinate
     missile1_x=83,  # invader shot 1 x coordinate
     missile2_y=82,  # invader shot 2 y coordinate
     missile2_x=84,  # invader shot 2 x coordinate
-    invaders_left_count=17,
     # spaceship_x=30,
     # obstacles=[43,70], #3 sequences of 9 bytes representing each one the obstacle pixels (0 destroyed, 1 intact),
     # (relevant bits are only 56 out of 72(9 * 8 bits) total, we could save 2 bytes for each obstacle representation
@@ -65,68 +65,14 @@ addresses = dict(
     # player_is_exploding=42,
 )
 
-import gym
-import cv2
-import numpy as np
-
-
-class ImageObservationWrapper(gym.ObservationWrapper):
-    def __init__(self, env, width=84, height=84, grayscale=True):
-        super().__init__(env)
-        self.width = width
-        self.height = height
-        self.grayscale = grayscale
-
-        if grayscale:
-            self.observation_space = gym.spaces.Box(
-                low=0, high=255, shape=(self.height, self.width, 1), dtype=np.uint8
-            )
-        else:
-            self.observation_space = gym.spaces.Box(
-                low=0, high=255, shape=(self.height, self.width, 3), dtype=np.uint8
-            )
-
-    def observation(self, obs):
-        if self.grayscale:
-            obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
-        obs = cv2.resize(obs, (self.width, self.height), interpolation=cv2.INTER_AREA)
-        if self.grayscale:
-            obs = np.expand_dims(obs, -1)
-        return obs
-
-
-class RawRAMWrapper(gym.ObservationWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.observation_space = gym.spaces.Box(
-            low=0, high=1, shape=(128,), dtype=np.float32
-        )
-
-    def observation(self, obs):
-        return np.array(obs, dtype=np.float32) / 255.0
-
-
-def invader_speed_norm(
-    n_alive,
-    n_total=36,
-    v_min_px=2.0,
-    v_max_px=120.0,
-    output_min=0.1,
-    output_max=1.0,
-    k=1.5,
-):
-    progress = 1 - n_alive / float(n_total)
-    v_px = v_min_px + (v_max_px - v_min_px) * (progress**k)
-    return output_min + (output_max - output_min) * (
-        (v_px - v_min_px) / (v_max_px - v_min_px)
-    )
+FRAME_SKIP = 3
 
 
 class DiscreteSI(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         # observation_shape = [255]*(len(addresses.keys())-3) + [255]*9*3 + [255]*6 + [2,2]
-        self.observation_space = Box(low=0.0, high=1.0, shape=(69,), dtype=np.float32)
+        self.observation_space = Box(low=0.0, high=1.0, shape=(73,), dtype=np.float32)
 
     def observation(self, obs):
         # gray_image = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
@@ -134,51 +80,39 @@ class DiscreteSI(gym.ObservationWrapper):
         # return gray_image
         # return [obs[i]/255. for i in range(len(obs))]
         res = []
-
+        rows = []
         obstacles_showing = (obs[24] >> 6) & 1
         for key in addresses.keys():
             address = addresses[key]
-            if "_x" in key:
+            if "_x" in key or "_y" in key:
                 value = int(obs[address])
-                res.append((value / 160) * 2.0 - 1.0)
-            elif "_y" in key:
-                value = int(obs[address])
-                res.append((value / 210) if value != 246 else 0.0)
+                # res.append( ((value-23)/(130-23))*2. - 1.)
+                res.append((value / 255) * 2.0 - 1.0)
             elif key == "invaders_left_count":
                 value = int(obs[address])
-                res.append((value / 36.0))
+                res.append((1.0 - (value - 1.0) / 36.0))
             elif "row" in key:
                 row = obs[address]
-                res.extend([float((row >> i) & 1) for i in range(6)])
-            # else:
-            #     res.append(obs[address] / 255)
+                res.extend([(row >> i) & 1 for i in range(6)])
+            else:
+                res.append(obs[address] / 255)
 
         # invaders direction
-        res.append(float((obs[24] >> 1) & 1) * 2.0 - 1.0)
+        res.append(-1.0 if (obs[24] >> 1) & 1 == 0 else 1.0)
+
+        # spaceship direction
+        # res.append(-1.0 if obs[24] & 1 == 0 else 1.0)
+
+        res.append(0.0 if obs[77] & 0b11 > 0 else 1.0)  # shooting
 
         if obstacles_showing:
             for i in range(3):
                 r_h = 0
                 for row in obs[43 + i * 9 : 52 + i * 9]:
                     r_h = r_h | row
-                res.extend([float((r_h >> i) & 1) for i in range(8)])
+                res.extend([(r_h >> i) & 1 for i in range(8)])
         else:
             res.extend([0] * 24)
-
-        # player_x = int(obs[addresses["player_x"]])
-        # enemies_x = int(obs[addresses["enemies_x"]]) - player_x
-        # missile1_x = int(obs[addresses["missile1_x"]]) - player_x
-        # missile2_x = int(obs[addresses["missile2_x"]]) - player_x
-
-        # res.append(enemies_x / 255)
-        # res.append(missile1_x / 255)
-        # res.append(missile2_x / 255)
-
-        # res.append(obs[addresses["enemies_y"]] / 255)
-        # res.append(obs[addresses["missile1_y"]] / 255)
-        # res.append(obs[addresses["missile2_y"]] / 255)
-
-        # res.append(float(obs[42] == 0))
         return res
 
 
@@ -192,7 +126,7 @@ class SIWrapper(gym.Wrapper):
         negative_reward=False,
         episodic_life=False,
     ):
-        super().__init__(env)
+        super().__init__(DiscreteSI(env))
         self.player_is_exploding = False
         self.random_starts = random_starts
         self.shooting = False
@@ -236,26 +170,3 @@ class SIWrapper(gym.Wrapper):
             else max(-1.0, min(1.0, total_reward))
         )
         return obs, total_reward, terminated, truncated, info
-
-
-def make_env(
-    obs_mode="condensed_ram", frame_skip=3, frame_stack=4, render=False, **kwargs
-):
-
-    env_kwargs = {"render_mode": "human" if render else "rgb_array"}
-
-    if obs_mode == "image":
-        env = gym.make("SpaceInvaders-NoFrameskip-v4", **env_kwargs)
-        env = ImageObservationWrapper(env)
-        env = gym.wrappers.FrameStack(env, frame_stack)
-    elif obs_mode == "ram":
-        env = gym.make("SpaceInvaders-ramNoFrameskip-v4", **env_kwargs)
-        env = RawRAMWrapper(env)
-    elif obs_mode == "condensed_ram":
-        env = gym.make("SpaceInvaders-ramNoFrameskip-v4", **env_kwargs)
-        env = DiscreteSI(env)
-    else:
-        raise ValueError(f"Unknown obs_mode {obs_mode}")
-
-    env = SIWrapper(env, frame_skip=frame_skip, **kwargs)
-    return env
