@@ -72,7 +72,7 @@ class DiscreteSI(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         # observation_shape = [255]*(len(addresses.keys())-3) + [255]*9*3 + [255]*6 + [2,2]
-        self.observation_space = Box(low=0.0, high=1.0, shape=(73,), dtype=np.float32)
+        self.observation_space = Box(low=0.0, high=1.0, shape=(72,), dtype=np.float32)
 
     def observation(self, obs):
         # gray_image = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
@@ -86,8 +86,8 @@ class DiscreteSI(gym.ObservationWrapper):
             address = addresses[key]
             if "_x" in key or "_y" in key:
                 value = int(obs[address])
-                # res.append( ((value-23)/(130-23))*2. - 1.)
-                res.append((value / 255) * 2.0 - 1.0)
+                res.append( ((value-23)/(130-23))*2. - 1.)
+                #res.append((value / 255) * 2.0 - 1.0)
             elif key == "invaders_left_count":
                 value = int(obs[address])
                 res.append((1.0 - (value - 1.0) / 36.0))
@@ -170,3 +170,29 @@ class SIWrapper(gym.Wrapper):
             else max(-1.0, min(1.0, total_reward))
         )
         return obs, total_reward, terminated, truncated, info
+<<<<<<< HEAD
+=======
+
+
+def make_env(
+    obs_mode="condensed_ram", frame_skip=3, frame_stack=4, render=False, **kwargs
+):
+
+    env_kwargs = {"render_mode": "human" if render else "rgb_array"}
+
+    if obs_mode == "image":
+        env = gym.make("SpaceInvadersNoFrameskip-v4", **env_kwargs)
+        env = ImageObservationWrapper(env)
+        env = gym.wrappers.FrameStack(env, frame_stack)
+    elif obs_mode == "ram":
+        env = gym.make("SpaceInvaders-ramNoFrameskip-v4", **env_kwargs)
+        env = RawRAMWrapper(env)
+    elif obs_mode == "condensed_ram":
+        env = gym.make("SpaceInvaders-ramNoFrameskip-v4", **env_kwargs)
+        env = DiscreteSI(env)
+    else:
+        raise ValueError(f"Unknown obs_mode {obs_mode}")
+
+    env = SIWrapper(env, frame_skip=frame_skip, **kwargs)
+    return env
+>>>>>>> 0b76251b7216a175cb80cb28bed7b7a530c2e116

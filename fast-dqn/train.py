@@ -62,7 +62,7 @@ def main():
     target_net.load_state_dict(online_net.state_dict())
     online_net.share_memory()
     target_net.share_memory()
-    
+
     N = mp.cpu_count()
     # optimizer = SharedAdam(online_net.parameters(), lr=lr,eps=0.01,betas=(.95,.95))
     optimizer = SharedRMSprop(online_net.parameters(), lr=lr)
