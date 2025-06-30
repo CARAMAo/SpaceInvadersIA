@@ -105,6 +105,8 @@ class DiscreteSI(gym.ObservationWrapper):
 
         # res.append(0.0 if obs[77] & 0b11 > 0 else 1.0)  # shooting
 
+        res.append(1.0 if obs[42] == 0 else 0.0)  # player state : playing/paused
+
         if obstacles_showing:
             for i in range(3):
                 r_h = 0
@@ -125,6 +127,7 @@ class SIWrapper(gym.Wrapper):
         normalize_reward=True,
         negative_reward=False,
         episodic_life=False,
+        render=False,
     ):
         super().__init__(DiscreteSI(env))
         self.player_is_exploding = False
@@ -134,6 +137,7 @@ class SIWrapper(gym.Wrapper):
         self.normalize_reward = normalize_reward
         self.negative_reward = negative_reward
         self.episodic_life = episodic_life
+        self.render = render
 
     def reset(self, *args, **kwargs):
         (state, info) = self.env.reset(*args, **kwargs)
@@ -155,6 +159,8 @@ class SIWrapper(gym.Wrapper):
             total_reward += reward
             hit = ale_interface.getRAM()[42] & 4
             invaded = (ale_interface.getRAM()[24] >> 7) & 1
+            if self.render:
+                self.env.render()
             if hit or invaded:
                 if self.negative_reward:
                     total_reward += -1.0
@@ -170,29 +176,4 @@ class SIWrapper(gym.Wrapper):
             else max(-1.0, min(1.0, total_reward))
         )
         return obs, total_reward, terminated, truncated, info
-<<<<<<< HEAD
-=======
 
-
-def make_env(
-    obs_mode="condensed_ram", frame_skip=3, frame_stack=4, render=False, **kwargs
-):
-
-    env_kwargs = {"render_mode": "human" if render else "rgb_array"}
-
-    if obs_mode == "image":
-        env = gym.make("SpaceInvadersNoFrameskip-v4", **env_kwargs)
-        env = ImageObservationWrapper(env)
-        env = gym.wrappers.FrameStack(env, frame_stack)
-    elif obs_mode == "ram":
-        env = gym.make("SpaceInvaders-ramNoFrameskip-v4", **env_kwargs)
-        env = RawRAMWrapper(env)
-    elif obs_mode == "condensed_ram":
-        env = gym.make("SpaceInvaders-ramNoFrameskip-v4", **env_kwargs)
-        env = DiscreteSI(env)
-    else:
-        raise ValueError(f"Unknown obs_mode {obs_mode}")
-
-    env = SIWrapper(env, frame_skip=frame_skip, **kwargs)
-    return env
->>>>>>> 0b76251b7216a175cb80cb28bed7b7a530c2e116

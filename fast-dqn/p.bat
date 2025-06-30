@@ -1,0 +1,1 @@
+cmd /K "conda activate ia"

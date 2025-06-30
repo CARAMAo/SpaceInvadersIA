@@ -74,7 +74,7 @@ def main():
         mp.Barrier(parties=N),
     )
 
-    writer = SummaryWriter(f"logs/{datetime.now().isoformat()}")
+
 
     online_net.to(device)
     target_net.to(device)
@@ -82,9 +82,9 @@ def main():
     target_net.train()
 
     run_name = (
-        f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime("%d-%m-%y-%H-%M-%S")}"
+        f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}"
     )
-
+    writer = SummaryWriter(f"logs/{run_name}")
     workers = [
         Worker(
             online_net,
@@ -100,27 +100,35 @@ def main():
         )
         for i in range(N)
     ]
+    
+    
+
     [w.start() for w in workers]
+    score = play_game(env,online_net)
+    writer.add_scalar("log/score", score, 0)
+    print("Training start, score:",score)
     res = []
     while True:
         r = res_queue.get()
         if r is not None:
             res.append(r)
-            [w_name, step, log_type, _, loss] = r
+            [w_name, step, log_type, epsilon, loss] = r
             if log_type == "epoch_end":
                 score = play_game(
                     env,
                     online_net,
                 )
                 writer.add_scalar("log/score", score, step)
-                if not os.path.isdir("checkpoints/" + run_name):
-                    os.mkdir("checkpoints/" + run_name)
+                print(f"Epoch {step}: score {score} loss {loss}")
+                if not os.path.exists("checkpoints/" + run_name):
+                    os.makedirs("checkpoints/" + run_name,exist_ok=True)
                 torch.save(
                     {"model": online_net.state_dict(), "step": step},
                     f"checkpoints/{run_name}/checkpoint{step}",
                 )
             else:
                 writer.add_scalar("log/loss/" + w_name, float(loss), step)
+                writer.add_scalar("log/epsilon/" + w_name, float(epsilon), step)
             writer.flush()
 
         else:

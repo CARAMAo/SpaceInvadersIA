@@ -1,3 +1,4 @@
+
 import gym
 import gym.wrappers
 import torch
@@ -108,9 +109,10 @@ class Worker(mp.Process):
 
     def run(self):
         epsilon = epsilon_start
+        epsilon_min = np.random.choice(epsilon_end,p=epsilon_distribution)
         steps = 0
         global_step = 0
-
+        loss = 0
         self.online_net.init(seed=42)
         self.target_net.init(seed=42)
         self.init_barrier.wait()
@@ -144,24 +146,27 @@ class Worker(mp.Process):
                 # else:
                 state = next_state
 
-                if len(self.memory) > pre_training:
+                if len(self.memory) >= pre_training:
                     with self.global_step.get_lock():
                         self.global_step.value += 1
                         global_step = self.global_step.value
                         if global_step % epoch_steps == 0:
-                            self.record(global_step // epoch_steps, "epoch_end")
+                            self.record(global_step // epoch_steps, "epoch_end",loss=loss)
 
                     steps += 1
+                    if steps % epsilon_update_period == 0:
+                        epsilon_min = np.random.choice(epsilon_end,p=epsilon_distribution)
 
-                    epsilon = epsilon_end + (epsilon_start - epsilon_end) * (
+                    epsilon = epsilon_min + (epsilon_start - epsilon_min) * (
                         1.0 - global_step / exploration_frames
                     )
-                    epsilon = max(epsilon, epsilon_end)
+                    epsilon = max(epsilon, epsilon_min)
 
                     if done or steps % async_update_step == 0:
                         s, a, r, s1, done_t = self.memory.sample(batch_size)
                         loss = self.optimize_model(s, a, r, s1, done_t)
-                        self.record(steps, "loss", loss=loss)
+                        self.record(steps, "loss", epsilon=epsilon, loss=loss)
+                        
                     if global_step % update_target == 0:
                         self.update_target_model()
 

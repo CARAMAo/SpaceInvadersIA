@@ -21,7 +21,6 @@ class QNet(nn.Module):
     def init(self, seed=None):
         if seed:
             torch.manual_seed(seed=seed)
-            torch.manual_seed_all(seed=seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed(seed=seed)
                 torch.cuda.manual_seed_all(seed=seed)
