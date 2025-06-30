@@ -103,7 +103,7 @@ class DiscreteSI(gym.ObservationWrapper):
         # spaceship direction
         # res.append(-1.0 if obs[24] & 1 == 0 else 1.0)
 
-        res.append(0.0 if obs[77] & 0b11 > 0 else 1.0)  # shooting
+        # res.append(0.0 if obs[77] & 0b11 > 0 else 1.0)  # shooting
 
         if obstacles_showing:
             for i in range(3):
