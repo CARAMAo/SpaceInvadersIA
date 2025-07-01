@@ -5,7 +5,7 @@ batch_size = 128
 memory_size = 10_000
 pre_training = memory_size
 lr = 1e-4
-update_target = 10_000
+update_target = 40_000
 async_update_step = 4
 
 #exploration

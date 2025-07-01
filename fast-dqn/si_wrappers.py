@@ -81,12 +81,18 @@ class DiscreteSI(gym.ObservationWrapper):
         # return [obs[i]/255. for i in range(len(obs))]
         res = []
         rows = []
+        norm_player_x = ((obs[28]-23/(130-23))*2. - 1.
         obstacles_showing = (obs[24] >> 6) & 1
         for key in addresses.keys():
             address = addresses[key]
             if "_x" in key or "_y" in key:
                 value = int(obs[address])
-                res.append( ((value-23)/(130-23))*2. - 1.)
+                if key == 'player_x':
+                    res.append(norm_player_x)
+                else:
+                    norm_value = ((value-23)/(130-23))*2. - 1.
+                
+                res.append( )
                 #res.append((value / 255) * 2.0 - 1.0)
             elif key == "invaders_left_count":
                 value = int(obs[address])

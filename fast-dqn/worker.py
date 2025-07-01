@@ -151,8 +151,8 @@ class Worker(mp.Process):
                     with self.global_step.get_lock():
                         self.global_step.value += 1
                         global_step = self.global_step.value
-                        if global_step >= 7_500_000:
-                            self.optimizer.param_groups[0]['lr'] = lr /(10*((global_step-7_500_000)//2_500_000 + 1))
+                        if global_step >= 15 * epoch_steps:
+                            self.optimizer.param_groups[0]['lr'] = lr /(10*((global_step-15*epoch_steps)//(10*epoch_steps) + 1))
                         if global_step % epoch_steps == 0:
                             self.record(global_step // epoch_steps, "epoch_end",loss=loss)
                         
