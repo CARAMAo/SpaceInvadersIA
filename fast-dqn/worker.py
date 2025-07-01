@@ -1,11 +1,10 @@
-
 import gym
 import gym.wrappers
 import torch
 import torch.multiprocessing as mp
 import numpy as np
 from model import QNet
-from memory import ReplayMemory, Transition
+from memory import ReplayMemory, Transition, PrioritizedReplayMemory
 from si_wrappers import *
 from copy import deepcopy
 from config import *
@@ -45,9 +44,9 @@ class Worker(mp.Process):
         )
 
         self.frame_stack = deque([], maxlen=4)
-        self.memory = ReplayMemory(memory_size)
+        self.memory = PrioritizedReplayMemory(memory_size)
 
-    def record(self, steps, log_type, epsilon=None, loss=None,lr=None):
+    def record(self, steps, log_type, epsilon=None, loss=None, lr=None):
 
         self.res_queue.put(
             [
@@ -65,6 +64,18 @@ class Worker(mp.Process):
 
     def optimize_model(self, s, a, r, s1, done):
 
+        if len(self.memory) < batch_size:
+            return 0
+        s, a, r, s1, done, indices, weights = self.memory.sample(
+            batch_size, beta=self.beta
+        )
+        s = torch.cat(s)
+        a = torch.cat(a)
+        r = torch.cat(r)
+        s1 = torch.cat(s1)
+        done = torch.cat(done)
+        weights = torch.tensor(weights, device=device).unsqueeze(1)
+
         s = torch.cat(s)
         a = torch.cat(a)
         r = torch.cat(r)
@@ -80,7 +91,6 @@ class Worker(mp.Process):
         # on the "older" target_net; selecting their best reward with max(1).values
         # This is merged based on the mask, such that we'll have either the expected
         # state value or 0 in case the state was final.
-        next_state_values = torch.zeros(batch_size, device=device)
         with torch.no_grad():
             next_state_values = self.target_net(s1).max(1).values
             # Compute the expected Q values
@@ -89,7 +99,11 @@ class Worker(mp.Process):
         # Compute Huber loss
         criterion = torch.nn.MSELoss()
 
-        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+        losses = criterion(
+            state_action_values, expected_state_action_values.unsqueeze(1)
+        )
+
+        loss = (losses * weights).mean()
         loss_value = loss.item()
         # Optimize the model
         self.optimizer.zero_grad()
@@ -97,6 +111,15 @@ class Worker(mp.Process):
         # In-place gradient clipping
         torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
+
+        td_errors = (
+            (state_action_values.detach() - expected_state_action_values.unsqueeze(1))
+            .abs()
+            .cpu()
+            .numpy()
+        )
+        new_priorities = td_errors + 1e-6
+        self.memory.update_priorities(indices, new_priorities.flatten())
         return loss_value
 
     def get_action(self, state, epsilon):
@@ -110,7 +133,7 @@ class Worker(mp.Process):
 
     def run(self):
         epsilon = epsilon_start
-        epsilon_min = np.random.choice(epsilon_end,p=epsilon_distribution)
+        epsilon_min = np.random.choice(epsilon_end, p=epsilon_distribution)
         steps = 0
         global_step = 0
         loss = 0
@@ -152,14 +175,24 @@ class Worker(mp.Process):
                         self.global_step.value += 1
                         global_step = self.global_step.value
                         if global_step >= 15 * epoch_steps:
-                            self.optimizer.param_groups[0]['lr'] = lr /(10*((global_step-15*epoch_steps)//(10*epoch_steps) + 1))
+                            self.optimizer.param_groups[0]["lr"] = lr / (
+                                10
+                                * (
+                                    (global_step - 15 * epoch_steps)
+                                    // (10 * epoch_steps)
+                                    + 1
+                                )
+                            )
                         if global_step % epoch_steps == 0:
-                            self.record(global_step // epoch_steps, "epoch_end",loss=loss)
-                        
+                            self.record(
+                                global_step // epoch_steps, "epoch_end", loss=loss
+                            )
 
                     steps += 1
                     if steps % epsilon_update_period == 0:
-                        epsilon_min = np.random.choice(epsilon_end,p=epsilon_distribution)
+                        epsilon_min = np.random.choice(
+                            epsilon_end, p=epsilon_distribution
+                        )
 
                     epsilon = epsilon_min + (epsilon_start - epsilon_min) * (
                         1.0 - global_step / exploration_frames
@@ -167,10 +200,16 @@ class Worker(mp.Process):
                     epsilon = max(epsilon, epsilon_min)
 
                     if done or steps % async_update_step == 0:
-                        s, a, r, s1, done_t = self.memory.sample(batch_size)
+                        # s, a, r, s1, done_t = self.memory.sample(batch_size)
                         loss = self.optimize_model(s, a, r, s1, done_t)
-                        self.record(steps, "loss", epsilon=epsilon, loss=loss,lr=self.optimizer.param_groups[0]['lr'])
-                        
+                        self.record(
+                            steps,
+                            "loss",
+                            epsilon=epsilon,
+                            loss=loss,
+                            lr=self.optimizer.param_groups[0]["lr"],
+                        )
+
                     if global_step % update_target == 0:
                         self.update_target_model()
 
