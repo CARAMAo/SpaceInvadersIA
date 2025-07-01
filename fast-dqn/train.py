@@ -112,7 +112,7 @@ def main():
         r = res_queue.get()
         if r is not None:
             res.append(r)
-            [w_name, step, log_type, epsilon, loss] = r
+            [w_name, step, log_type, epsilon, loss,lr_log] = r
             if log_type == "epoch_end":
                 score = play_game(
                     env,
@@ -129,6 +129,7 @@ def main():
             else:
                 writer.add_scalar("log/loss/" + w_name, float(loss), step)
                 writer.add_scalar("log/epsilon/" + w_name, float(epsilon), step)
+                writer.add_scalar("log/lr/"+w_name, float(lr_log), step)
             writer.flush()
 
         else:

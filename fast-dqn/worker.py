@@ -47,7 +47,7 @@ class Worker(mp.Process):
         self.frame_stack = deque([], maxlen=4)
         self.memory = ReplayMemory(memory_size)
 
-    def record(self, steps, log_type, epsilon=None, loss=None):
+    def record(self, steps, log_type, epsilon=None, loss=None,lr=None):
 
         self.res_queue.put(
             [
@@ -56,6 +56,7 @@ class Worker(mp.Process):
                 log_type,
                 epsilon,
                 loss,
+                lr,
             ]
         )
 
@@ -150,8 +151,11 @@ class Worker(mp.Process):
                     with self.global_step.get_lock():
                         self.global_step.value += 1
                         global_step = self.global_step.value
+                        if global_step >= 7_500_000:
+                            self.optimizer.param_groups[0]['lr'] = lr /(10*((global_step-7_500_000)//2_500_000 + 1))
                         if global_step % epoch_steps == 0:
                             self.record(global_step // epoch_steps, "epoch_end",loss=loss)
+                        
 
                     steps += 1
                     if steps % epsilon_update_period == 0:
@@ -165,7 +169,7 @@ class Worker(mp.Process):
                     if done or steps % async_update_step == 0:
                         s, a, r, s1, done_t = self.memory.sample(batch_size)
                         loss = self.optimize_model(s, a, r, s1, done_t)
-                        self.record(steps, "loss", epsilon=epsilon, loss=loss)
+                        self.record(steps, "loss", epsilon=epsilon, loss=loss,lr=self.optimizer.param_groups[0]['lr'])
                         
                     if global_step % update_target == 0:
                         self.update_target_model()
