@@ -68,48 +68,47 @@ addresses = dict(
 FRAME_SKIP = 3
 
 
+def invaders_speed_mapping(num_invaders):
+    if num_invaders >= 22:
+        return 1
+    if num_invaders >= 8:
+        return 2
+    if num_invaders >= 3:
+        return 3
+    if num_invaders == 2:
+        return 4
+    else:
+        return 5
+
+
 class DiscreteSI(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
-        # observation_shape = [255]*(len(addresses.keys())-3) + [255]*9*3 + [255]*6 + [2,2]
-        self.observation_space = Box(low=0.0, high=1.0, shape=(72,), dtype=np.float32)
+        self.observation_space = Box(low=0.0, high=1.0, shape=(71,), dtype=np.float32)
 
     def observation(self, obs):
-        # gray_image = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
-        # gray_image = gray_image[105:-21,35:119]
-        # return gray_image
-        # return [obs[i]/255. for i in range(len(obs))]
+
         res = []
-        rows = []
-        player_x_value = int(obs[addresses["player_x"]])
-        norm_player_x = ((player_x_value - 23) / (130 - 23)) * 2.0 - 1.0
 
         obstacles_showing = (obs[24] >> 6) & 1
         for key in addresses.keys():
             address = addresses[key]
             if "_x" in key:
                 value = int(obs[address])
-                if key == "player_x":
-                    res.append(norm_player_x)
-                else:
-                    offset = value - player_x_value
-                    norm_offset = (offset / (130 - 23)) * 2.0
-                    norm_offset = max(-1.0, min(1.0, norm_offset))  # clamp
-                    res.append(norm_offset)
+                res.append(((value - 23) / (130 - 23) * 2.0 - 1.0))
             elif "_y" in key:
                 value = int(obs[address])
                 res.append((value / 255.0))
-            elif key == "invaders_left_count":
-                value = int(obs[address])
-                res.append((1.0 - (value - 1.0) / 36.0))
             elif "row" in key:
                 row = obs[address]
-                res.extend([(row >> i) & 1 for i in range(6)])
-            else:
-                res.append(obs[address] / 255)
+                res.extend([float((row >> i) & 1) for i in range(6)])
+
+        invaders_left_count = obs[addresses["invaders_left_count"]]
+
+        speed = 2.0 * invaders_speed_mapping(invaders_left_count) / (130 - 23)
 
         # invaders direction
-        res.append(-1.0 if (obs[24] >> 1) & 1 == 0 else 1.0)
+        res.append(-speed if (obs[24] >> 1) & 1 == 0 else speed)
 
         # spaceship direction
         # res.append(-1.0 if obs[24] & 1 == 0 else 1.0)
@@ -123,7 +122,7 @@ class DiscreteSI(gym.ObservationWrapper):
                 r_h = 0
                 for row in obs[43 + i * 9 : 52 + i * 9]:
                     r_h = r_h | row
-                res.extend([(r_h >> i) & 1 for i in range(8)])
+                res.extend([float((r_h >> i) & 1) for i in range(8)])
         else:
             res.extend([0] * 24)
         return res
@@ -138,7 +137,6 @@ class SIWrapper(gym.Wrapper):
         normalize_reward=True,
         negative_reward=False,
         episodic_life=False,
-        render=False,
     ):
         super().__init__(DiscreteSI(env))
         self.player_is_exploding = False
@@ -148,7 +146,6 @@ class SIWrapper(gym.Wrapper):
         self.normalize_reward = normalize_reward
         self.negative_reward = negative_reward
         self.episodic_life = episodic_life
-        self.render = render
 
     def reset(self, *args, **kwargs):
         (state, info) = self.env.reset(*args, **kwargs)
@@ -170,8 +167,6 @@ class SIWrapper(gym.Wrapper):
             total_reward += reward
             hit = ale_interface.getRAM()[42] & 4
             invaded = (ale_interface.getRAM()[24] >> 7) & 1
-            if self.render:
-                self.env.render()
             if hit or invaded:
                 if self.negative_reward:
                     total_reward += -1.0
