@@ -1,11 +1,11 @@
 import torch
 
 gamma = 0.99
-batch_size = 512
+batch_size = 128
 memory_size = 80_000
 pre_training = memory_size//10
 lr = 1e-4
-update_target = 10_000
+update_target = 1_000
 async_update_step = 4
 
 #exploration

@@ -10,12 +10,12 @@ class QNet(nn.Module):
         super(QNet, self).__init__()
         self.num_inputs = num_inputs
         self.num_outputs = num_outputs
-        self.num_hidden = 128
+        self.num_hidden = 256
 
         self.fc1 = nn.Linear(num_inputs, self.num_hidden)
         self.fc2 = nn.Linear(self.num_hidden, self.num_hidden)
-        self.fc3 = nn.Linear(self.num_hidden, self.num_hidden)
-        self.fc4 = nn.Linear(self.num_hidden, num_outputs)
+        #self.fc3 = nn.Linear(self.num_hidden, self.num_hidden)
+        self.fc3 = nn.Linear(self.num_hidden, num_outputs)
         
         self.init()
 
@@ -33,8 +33,8 @@ class QNet(nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        qvalue = self.fc4(x)
+        #x = F.relu(self.fc3(x))
+        qvalue = self.fc3(x)
         return qvalue
 
 
@@ -65,33 +65,3 @@ class CNNQNet(nn.Module):
         x = F.relu(self.fc4(x.view(x.size(0), -1)))
         return self.head(x)
 
-    # def optimize_model(online_net, target_net, optimizer, batch):
-    #     states = torch.stack(batch.state)
-    #     next_states = torch.stack(batch.next_state)
-    #     actions = torch.Tensor(batch.action).to(device)
-    #     rewards = torch.Tensor(batch.reward).to(device)
-    #     masks = torch.Tensor(batch.mask).to(device)
-
-    #     pred = online_net(states).squeeze(1)
-
-    #     next_pred = target_net(next_states).squeeze(1)
-    #     # print("pre",pred)
-    #     pred = torch.sum(pred.mul(actions), dim=1)
-
-    #     target = rewards + masks * gamma * next_pred.max(1)[0]
-
-    #     criterion = nn.MSELoss()
-    #     loss = criterion(pred,target)
-
-    #     optimizer.zero_grad()
-    #     loss.backward()
-
-    #     torch.nn.utils.clip_grad_value_(online_net.parameters(), 10)
-    #     optimizer.step()
-
-    #     return loss
-
-    # def get_action(self, input):
-    #     qvalue = self.forward(input)
-    #     _, action = torch.max(qvalue, 1)
-    #     return action.item()

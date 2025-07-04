@@ -8,10 +8,10 @@ from si_wrappers import SIWrapper,DiscreteSI
 
 if __name__ == "__main__":
     checkpoint = torch.load(sys.argv[1], map_location="cuda")
-    env = gym.make("SpaceInvaders-ramNoFrameskip-v4", render_mode="human")
+    env = gym.make("SpaceInvaders-ramNoFrameskip-v4",render_mode="rgb_array")
     env.metadata['render_fps'] = 240
-    env = SIWrapper(env,frame_skip=4,render=True,random_starts=False)
-    
+    env = SIWrapper(env,frame_skip=4,random_starts=False,normalize_reward=False)
+   
     num_inputs = env.observation_space.shape[0]
     num_outputs = env.action_space.n
 
@@ -19,7 +19,7 @@ if __name__ == "__main__":
     net.load_state_dict(checkpoint["model"])
     net.eval()
 
-    epsilon = 0.05
+    epsilon = 0.01
 
     for episode in range(5):
         state, _ = env.reset()
@@ -32,7 +32,7 @@ if __name__ == "__main__":
                 with torch.no_grad():
                     state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
                     action = net(state_tensor).max(1).indices.item()
-            
+            env.render()
             next_state, reward, terminated, truncated, _ = env.step(action)
             total_reward += reward
             state = next_state
