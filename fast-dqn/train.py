@@ -49,7 +49,7 @@ def play_game(env, net, num_games=10):
 def main():
     env = gym.make("SpaceInvaders-ramNoFrameskip-v4")
     env = SIWrapper(env, normalize_reward=False, random_starts=False)
-    torch.manual_seed(500)
+    #torch.manual_seed(500)
     torch.multiprocessing.set_start_method("spawn")
     num_inputs = env.observation_space.shape[0]
     num_actions = env.action_space.n
@@ -58,8 +58,10 @@ def main():
     print(f"using {device.type}")
     online_net = QNet(num_inputs, num_actions)
     target_net = QNet(num_inputs, num_actions)
-
+    eval_net = QNet(num_inputs,num_actions)
+    eval_net.to(device)
     target_net.load_state_dict(online_net.state_dict())
+    eval_net.load_state_dict(online_net.state_dict())
     online_net.share_memory()
     target_net.share_memory()
 
@@ -73,16 +75,18 @@ def main():
         mp.Queue(),
         mp.Barrier(parties=N),
     )
-
+    
+    init_seed = np.random.getrandbits(32)
 
 
     online_net.to(device)
     target_net.to(device)
     online_net.train()
     target_net.train()
+    eval_net.eval()
 
     run_name = (
-        f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}"
+        f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_4layers"
     )
     writer = SummaryWriter(f"logs/{run_name}")
     workers = [
@@ -96,6 +100,7 @@ def main():
             memory_size,
             res_queue,
             init_barrier,
+            init_seed,
             i,
         )
         for i in range(N)
@@ -114,16 +119,17 @@ def main():
             res.append(r)
             [w_name, step, log_type, epsilon, loss,lr_log] = r
             if log_type == "epoch_end":
+                eval_net.load_state_dict(online_net.state_dict())
                 score = play_game(
                     env,
-                    online_net,
+                    eval_net,
                 )
                 writer.add_scalar("log/score", score, step)
                 print(f"Epoch {step}: score {score} loss {loss}")
                 if not os.path.exists("checkpoints/" + run_name):
                     os.makedirs("checkpoints/" + run_name,exist_ok=True)
                 torch.save(
-                    {"model": online_net.state_dict(), "step": step},
+                    {"model": eval_net.state_dict(), "step": step},
                     f"checkpoints/{run_name}/checkpoint{step}",
                 )
             else:

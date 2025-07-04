@@ -1,18 +1,18 @@
 import torch
 
 gamma = 0.99
-batch_size = 128
-memory_size = 10_000
-pre_training = memory_size
+batch_size = 512
+memory_size = 80_000
+pre_training = memory_size//10
 lr = 1e-4
-update_target = 40_000
+update_target = 10_000
 async_update_step = 4
 
 #exploration
 epsilon_start = 1.0
 epsilon_end = [0.1,0.01,0.5]
-epsilon_distribution = [.4,.3,.3]
-epsilon_update_period = 100_000 #local steps/frames
+epsilon_distribution = [.3,.3,.4]
+epsilon_update_period = 250_000 #local steps/frames
 exploration_frames = 1_000_000  #global steps/frames
 
 

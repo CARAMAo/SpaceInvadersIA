@@ -23,6 +23,7 @@ class Worker(mp.Process):
         memory_size,
         res_queue,
         init_barrier,
+        init_seed,
         name,
     ):
         super(Worker, self).__init__(daemon=True)
@@ -42,9 +43,9 @@ class Worker(mp.Process):
             target_net,
             optimizer,
         )
-
+        self.init_seed = init_seed
         self.frame_stack = deque([], maxlen=4)
-        self.memory = PrioritizedReplayMemory(memory_size)
+        self.memory = ReplayMemory(memory_size)
 
     def record(self, steps, log_type, epsilon=None, loss=None, lr=None):
 
@@ -62,25 +63,20 @@ class Worker(mp.Process):
     def update_target_model(self):
         self.target_net.load_state_dict(self.online_net.state_dict())
 
-    def optimize_model(self, s, a, r, s1, done):
+    def optimize_model(self):
 
         if len(self.memory) < batch_size:
             return 0
-        s, a, r, s1, done, indices, weights = self.memory.sample(
-            batch_size, beta=self.beta
+        s, a, r, s1, done = self.memory.sample(
+            batch_size
         )
         s = torch.cat(s)
         a = torch.cat(a)
         r = torch.cat(r)
         s1 = torch.cat(s1)
         done = torch.cat(done)
-        weights = torch.tensor(weights, device=device).unsqueeze(1)
+        
 
-        s = torch.cat(s)
-        a = torch.cat(a)
-        r = torch.cat(r)
-        s1 = torch.cat(s1)
-        done = torch.cat(done)
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
@@ -99,27 +95,18 @@ class Worker(mp.Process):
         # Compute Huber loss
         criterion = torch.nn.MSELoss()
 
-        losses = criterion(
+        loss = criterion(
             state_action_values, expected_state_action_values.unsqueeze(1)
         )
 
-        loss = (losses * weights).mean()
         loss_value = loss.item()
         # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
-        torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
+        #torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
-
-        td_errors = (
-            (state_action_values.detach() - expected_state_action_values.unsqueeze(1))
-            .abs()
-            .cpu()
-            .numpy()
-        )
-        new_priorities = td_errors + 1e-6
-        self.memory.update_priorities(indices, new_priorities.flatten())
+        
         return loss_value
 
     def get_action(self, state, epsilon):
@@ -137,8 +124,8 @@ class Worker(mp.Process):
         steps = 0
         global_step = 0
         loss = 0
-        self.online_net.init(seed=42)
-        self.target_net.init(seed=42)
+        self.online_net.init(seed=self.init_seed)
+        self.target_net.init(seed=self.init_seed)
         self.init_barrier.wait()
 
         while global_step // epoch_steps < max_epochs:
@@ -174,15 +161,15 @@ class Worker(mp.Process):
                     with self.global_step.get_lock():
                         self.global_step.value += 1
                         global_step = self.global_step.value
-                        if global_step >= 15 * epoch_steps:
-                            self.optimizer.param_groups[0]["lr"] = lr / (
-                                10
-                                * (
-                                    (global_step - 15 * epoch_steps)
-                                    // (10 * epoch_steps)
-                                    + 1
-                                )
-                            )
+                        #if global_step >= 30 * epoch_steps:
+                        #    self.optimizer.param_groups[0]["lr"] = lr / (
+                        #        2
+                        #        * (
+                        #            (global_step - 30 * epoch_steps)
+                        #            // (10 * epoch_steps)
+                        #            + 1
+                        #        )
+                        #    )
                         if global_step % epoch_steps == 0:
                             self.record(
                                 global_step // epoch_steps, "epoch_end", loss=loss
@@ -201,7 +188,7 @@ class Worker(mp.Process):
 
                     if done or steps % async_update_step == 0:
                         # s, a, r, s1, done_t = self.memory.sample(batch_size)
-                        loss = self.optimize_model(s, a, r, s1, done_t)
+                        loss = self.optimize_model()
                         self.record(
                             steps,
                             "loss",
