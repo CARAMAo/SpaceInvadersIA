@@ -49,7 +49,7 @@ def play_game(env, net, num_games=10):
 def main():
     env = gym.make("SpaceInvaders-ramNoFrameskip-v4")
     env = SIWrapper(env, normalize_reward=False, random_starts=False)
-    #torch.manual_seed(500)
+    # torch.manual_seed(500)
     torch.multiprocessing.set_start_method("spawn")
     num_inputs = env.observation_space.shape[0]
     num_actions = env.action_space.n
@@ -58,26 +58,25 @@ def main():
     print(f"using {device.type}")
     online_net = QNet(num_inputs, num_actions)
     target_net = QNet(num_inputs, num_actions)
-    eval_net = QNet(num_inputs,num_actions)
+    eval_net = QNet(num_inputs, num_actions)
     eval_net.to(device)
     target_net.load_state_dict(online_net.state_dict())
     eval_net.load_state_dict(online_net.state_dict())
     online_net.share_memory()
     target_net.share_memory()
 
-    N = mp.cpu_count()
+    N = 2  # mp.cpu_count()
     # optimizer = SharedAdam(online_net.parameters(), lr=lr,eps=0.01,betas=(.95,.95))
     optimizer = SharedRMSprop(online_net.parameters(), lr=lr)
-    global_ep, global_ep_r, global_step, res_queue,init_barrier = (
+    global_ep, global_ep_r, global_step, res_queue, init_barrier = (
         mp.Value("i", 0),
         mp.Value("d", 0.0),
         mp.Value("i", 0),
         mp.Queue(),
         mp.Barrier(parties=N),
     )
-    
-    init_seed = np.random.getrandbits(32)
 
+    init_seed = random.getrandbits(32)
 
     online_net.to(device)
     target_net.to(device)
@@ -85,9 +84,7 @@ def main():
     target_net.train()
     eval_net.eval()
 
-    run_name = (
-        f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_4layers"
-    )
+    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_4layers"
     writer = SummaryWriter(f"logs/{run_name}")
     workers = [
         Worker(
@@ -105,19 +102,17 @@ def main():
         )
         for i in range(N)
     ]
-    
-    
 
     [w.start() for w in workers]
-    score = play_game(env,online_net)
+    score = play_game(env, online_net)
     writer.add_scalar("log/score", score, 0)
-    print("Training start, score:",score)
+    print("Training start, score:", score)
     res = []
     while True:
         r = res_queue.get()
         if r is not None:
             res.append(r)
-            [w_name, step, log_type, epsilon, loss,lr_log] = r
+            [w_name, step, log_type, epsilon, loss, lr_log] = r
             if log_type == "epoch_end":
                 eval_net.load_state_dict(online_net.state_dict())
                 score = play_game(
@@ -127,7 +122,7 @@ def main():
                 writer.add_scalar("log/score", score, step)
                 print(f"Epoch {step}: score {score} loss {loss}")
                 if not os.path.exists("checkpoints/" + run_name):
-                    os.makedirs("checkpoints/" + run_name,exist_ok=True)
+                    os.makedirs("checkpoints/" + run_name, exist_ok=True)
                 torch.save(
                     {"model": eval_net.state_dict(), "step": step},
                     f"checkpoints/{run_name}/checkpoint{step}",
@@ -135,7 +130,7 @@ def main():
             else:
                 writer.add_scalar("log/loss/" + w_name, float(loss), step)
                 writer.add_scalar("log/epsilon/" + w_name, float(epsilon), step)
-                writer.add_scalar("log/lr/"+w_name, float(lr_log), step)
+                writer.add_scalar("log/lr/" + w_name, float(lr_log), step)
             writer.flush()
 
         else:

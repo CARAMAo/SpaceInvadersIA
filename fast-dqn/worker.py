@@ -67,15 +67,12 @@ class Worker(mp.Process):
 
         if len(self.memory) < batch_size:
             return 0
-        s, a, r, s1, done = self.memory.sample(
-            batch_size
-        )
+        s, a, r, s1, done = self.memory.sample(batch_size)
         s = torch.cat(s)
         a = torch.cat(a)
         r = torch.cat(r)
         s1 = torch.cat(s1)
         done = torch.cat(done)
-        
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
@@ -95,18 +92,16 @@ class Worker(mp.Process):
         # Compute Huber loss
         criterion = torch.nn.MSELoss()
 
-        loss = criterion(
-            state_action_values, expected_state_action_values.unsqueeze(1)
-        )
+        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
 
         loss_value = loss.item()
         # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
-        #torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
+        # torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
-        
+
         return loss_value
 
     def get_action(self, state, epsilon):
@@ -161,7 +156,7 @@ class Worker(mp.Process):
                     with self.global_step.get_lock():
                         self.global_step.value += 1
                         global_step = self.global_step.value
-                        #if global_step >= 30 * epoch_steps:
+                        # if global_step >= 30 * epoch_steps:
                         #    self.optimizer.param_groups[0]["lr"] = lr / (
                         #        2
                         #        * (
