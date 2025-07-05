@@ -112,7 +112,9 @@ class Worker(mp.Process):
             expected_state_action_values = (done * next_state_values * gamma) + r
 
         # Compute Huber loss
-        criterion = torch.nn.MSELoss()
+        criterion = torch.nn.MSELoss(
+            reduction="none" if weights is not None else "mean"
+        )
 
         losses = criterion(
             state_action_values, expected_state_action_values.unsqueeze(1)
