@@ -84,7 +84,7 @@ def main():
     target_net.train()
     eval_net.eval()
 
-    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_small"
+    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}"
     writer = SummaryWriter(f"logs/{run_name}")
     workers = [
         Worker(

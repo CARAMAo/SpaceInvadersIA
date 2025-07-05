@@ -14,7 +14,6 @@ class QNet(nn.Module):
 
         self.fc1 = nn.Linear(num_inputs, self.num_hidden)
         self.fc2 = nn.Linear(self.num_hidden, self.num_hidden)
-        #self.fc3 = nn.Linear(self.num_hidden, self.num_hidden)
         self.fc3 = nn.Linear(self.num_hidden, num_outputs)
         
         self.init()
@@ -33,7 +32,6 @@ class QNet(nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        #x = F.relu(self.fc3(x))
         qvalue = self.fc3(x)
         return qvalue
 
