@@ -85,7 +85,13 @@ class Worker(mp.Process):
         # This is merged based on the mask, such that we'll have either the expected
         # state value or 0 in case the state was final.
         with torch.no_grad():
-            next_state_values = self.target_net(s1).max(1).values
+            if double_dqn:
+                next_actions = self.online_net(s1).max(1).indices.unsqueeze(1)
+                next_state_values = (
+                    self.target_net(s1).gather(1, next_actions).squeeze(1)
+                )
+            else:
+                next_state_values = self.target_net(s1).max(1).values
             # Compute the expected Q values
             expected_state_action_values = (done * next_state_values * gamma) + r
 

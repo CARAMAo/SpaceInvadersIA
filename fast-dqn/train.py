@@ -21,7 +21,7 @@ from si_wrappers import *
 from shared_adam import SharedAdam
 from shared_rmsprop import SharedRMSprop
 from collections import deque
-from config import lr, device, batch_size, async_update_step, memory_size,update_target
+from config import lr, device, batch_size, async_update_step, memory_size,update_target,double_dqn
 
 
 def play_game(env, net, num_games=10):
@@ -84,7 +84,7 @@ def main():
     target_net.train()
     eval_net.eval()
 
-    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}"
+    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{"DDQN" if double_dqn else "DQN"}"
     writer = SummaryWriter(f"logs/{run_name}")
     workers = [
         Worker(
