@@ -222,7 +222,7 @@ class Worker(mp.Process):
                     )
                     epsilon = max(epsilon, epsilon_min)
 
-                    beta = min(1.0, 0.4 + (global_step / 10_000_000) * 0.6)
+                    beta = min(1.0, 0.4 + (global_step / (50 * epoch_steps)) * 0.6)
 
                     if done or steps % async_update_step == 0:
                         # s, a, r, s1, done_t = self.memory.sample(batch_size)
