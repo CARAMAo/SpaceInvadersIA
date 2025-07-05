@@ -22,3 +22,4 @@ epoch_steps = 250_000
 max_epochs = 200
 
 double_dqn = False
+prioritized_memory = True

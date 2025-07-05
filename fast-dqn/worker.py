@@ -45,7 +45,10 @@ class Worker(mp.Process):
         )
         self.init_seed = init_seed
         self.frame_stack = deque([], maxlen=4)
-        self.memory = ReplayMemory(memory_size)
+        if prioritized_memory:
+            self.memory = PrioritizedReplayMemory(memory_size)
+        else:
+            self.memory = ReplayMemory(memory_size)
 
     def record(self, steps, log_type, epsilon=None, loss=None, lr=None):
 
@@ -63,16 +66,29 @@ class Worker(mp.Process):
     def update_target_model(self):
         self.target_net.load_state_dict(self.online_net.state_dict())
 
-    def optimize_model(self):
+    def optimize_model(self, beta=0.4):
 
         if len(self.memory) < batch_size:
             return 0
-        s, a, r, s1, done = self.memory.sample(batch_size)
-        s = torch.cat(s)
-        a = torch.cat(a)
-        r = torch.cat(r)
-        s1 = torch.cat(s1)
-        done = torch.cat(done)
+
+        if isinstance(self.memory, PrioritizedReplayMemory):
+            s, a, r, s1, done, indices, weights = self.memory.sample(
+                batch_size, beta=beta
+            )
+            s = torch.cat(list(s))
+            a = torch.cat(list(a))
+            r = torch.cat(list(r))
+            s1 = torch.cat(list(s1))
+            done = torch.cat(list(done))
+            weights = torch.tensor(weights, device=device).unsqueeze(1)
+        else:
+            s, a, r, s1, done = self.memory.sample(batch_size)
+            s = torch.cat(list(s))
+            a = torch.cat(list(a))
+            r = torch.cat(list(r))
+            s1 = torch.cat(list(s1))
+            done = torch.cat(list(done))
+            weights = None
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
@@ -98,7 +114,13 @@ class Worker(mp.Process):
         # Compute Huber loss
         criterion = torch.nn.MSELoss()
 
-        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+        losses = criterion(
+            state_action_values, expected_state_action_values.unsqueeze(1)
+        )
+        if weights is not None:
+            loss = (losses * weights).mean()
+        else:
+            loss = losses.mean()
 
         loss_value = loss.item()
         # Optimize the model
@@ -107,6 +129,19 @@ class Worker(mp.Process):
         # In-place gradient clipping
         # torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
+
+        if isinstance(self.memory, PrioritizedReplayMemory):
+            td_errors = (
+                (
+                    state_action_values.detach()
+                    - expected_state_action_values.unsqueeze(1)
+                )
+                .abs()
+                .cpu()
+                .numpy()
+            )
+            new_priorities = td_errors + 1e-6
+            self.memory.update_priorities(indices, new_priorities.flatten())
 
         return loss_value
 
@@ -187,9 +222,11 @@ class Worker(mp.Process):
                     )
                     epsilon = max(epsilon, epsilon_min)
 
+                    beta = min(1.0, 0.4 + (global_step / 10_000_000) * 0.6)
+
                     if done or steps % async_update_step == 0:
                         # s, a, r, s1, done_t = self.memory.sample(batch_size)
-                        loss = self.optimize_model()
+                        loss = self.optimize_model(beta=beta)
                         self.record(
                             steps,
                             "loss",
