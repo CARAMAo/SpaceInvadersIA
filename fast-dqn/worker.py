@@ -111,9 +111,9 @@ class Worker(mp.Process):
             # Compute the expected Q values
             expected_state_action_values = (done * next_state_values * gamma) + r
 
-        # Compute Huber loss
+        # Compute loss
         criterion = torch.nn.MSELoss(
-            reduction="none" if weights is not None else "mean"
+            reduction="none"
         )
 
         losses = criterion(
@@ -129,7 +129,7 @@ class Worker(mp.Process):
         self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
-        # torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
+        #torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
 
         if isinstance(self.memory, PrioritizedReplayMemory):
@@ -199,15 +199,15 @@ class Worker(mp.Process):
                     with self.global_step.get_lock():
                         self.global_step.value += 1
                         global_step = self.global_step.value
-                        if global_step >= 20 * epoch_steps:
-                            self.optimizer.param_groups[0]["lr"] = lr / (
-                                10
-                                * (
-                                    (global_step - 20 * epoch_steps)
-                                    // (20 * epoch_steps)
-                                    + 1
-                                )
-                            )
+                        #if global_step >= 20 * epoch_steps:
+                        #    self.optimizer.param_groups[0]["lr"] = lr / (
+                        #        10
+                        #        * (
+                        #            (global_step - 20 * epoch_steps)
+                        #            // (20 * epoch_steps)
+                        #            + 1
+                        #        )
+                        #    )
                         if global_step % epoch_steps == 0:
                             self.record(
                                 global_step // epoch_steps, "epoch_end", loss=loss

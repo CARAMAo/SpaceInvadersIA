@@ -85,7 +85,7 @@ def main():
         mp.Barrier(parties=N),
     )
 
-    init_seed = random.getrandbits(32)
+    init_seed = 42#random.getrandbits(32)
 
     online_net.to(device)
     target_net.to(device)
@@ -94,7 +94,7 @@ def main():
     eval_net.eval()
 
     run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{'DDQN' if double_dqn else 'DQN'}{'_prioritized' if prioritized_memory else ''}"
-    writer = SummaryWriter(f"logs/{run_name}")
+    writer = SummaryWriter(f"D:/logs/{run_name}")
     workers = [
         Worker(
             online_net,
@@ -130,11 +130,11 @@ def main():
                 )
                 writer.add_scalar("log/score", score, step)
                 print(f"Epoch {step}: score {score} loss {loss}")
-                if not os.path.exists("checkpoints/" + run_name):
-                    os.makedirs("checkpoints/" + run_name, exist_ok=True)
+                if not os.path.exists("D:/checkpoints/" + run_name):
+                    os.makedirs("D:/checkpoints/" + run_name, exist_ok=True)
                 torch.save(
                     {"model": eval_net.state_dict(), "step": step},
-                    f"checkpoints/{run_name}/checkpoint{step}",
+                    f"D:/checkpoints/{run_name}/checkpoint{step}",
                 )
             else:
                 writer.add_scalar("log/loss/" + w_name, float(loss), step)
