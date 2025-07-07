@@ -222,6 +222,6 @@ class SIWrapper(gym.Wrapper):
         if self.obs_mode == "frames":
             max_frame = np.maximum.reduce(frames)
             self.frame_stack.append(max_frame)
-            return max_frame, total_reward, terminated, truncated, info
+            return [*self.frame_stack], total_reward, terminated, truncated, info
         else:
             return obs, total_reward, terminated, truncated, info
