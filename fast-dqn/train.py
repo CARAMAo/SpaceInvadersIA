@@ -3,6 +3,9 @@ import sys
 import gym
 import random
 import gym.wrappers
+import gym.wrappers
+import gym.wrappers.atari_preprocessing
+import gym.wrappers.frame_stack
 import gym.wrappers.step_api_compatibility
 import numpy as np
 
@@ -30,6 +33,7 @@ from config import (
     update_target,
     double_dqn,
     prioritized_memory,
+    obs_mode,
 )
 
 
@@ -56,18 +60,25 @@ def play_game(env, net, num_games=10):
 
 
 def main():
-    env = gym.make("SpaceInvaders-ramNoFrameskip-v4")
-    env = SIWrapper(env, normalize_reward=False, random_starts=False)
+    if obs_mode == "frame":
+        env = gym.make("SpaceInvadersNoFrameskip-v4")
+        env = gym.wrappers.atari_preprocessing.AtariPreprocessing(env)
+        env = gym.wrappers.frame_stack.FrameStack(env, 4)
+    else:
+        env = gym.make("SpaceInvaders-ramNoFrameskip-v4")
+        env = SIWrapper(
+            env, normalize_reward=False, random_starts=False, obs_mode="frames"
+        )
     # torch.manual_seed(500)
     torch.multiprocessing.set_start_method("spawn")
-    num_inputs = env.observation_space.shape[0]
+    num_inputs = env.observation_space.shape
     num_actions = env.action_space.n
     print("state size:", num_inputs)
     print("action size:", num_actions)
     print(f"using {device.type}")
-    online_net = QNet(num_inputs, num_actions)
-    target_net = QNet(num_inputs, num_actions)
-    eval_net = QNet(num_inputs, num_actions)
+    online_net = CNNQNet()
+    target_net = CNNQNet()
+    eval_net = CNNQNet()
     eval_net.to(device)
     target_net.load_state_dict(online_net.state_dict())
     eval_net.load_state_dict(online_net.state_dict())
@@ -75,8 +86,8 @@ def main():
     target_net.share_memory()
 
     N = mp.cpu_count()
-    optimizer = SharedAdam(online_net.parameters(), lr=lr)
-    #optimizer = SharedRMSprop(online_net.parameters(), lr=lr)
+    # optimizer = SharedAdam(online_net.parameters(), lr=lr)
+    optimizer = SharedRMSprop(online_net.parameters(), lr=lr)
     global_ep, global_ep_r, global_step, res_queue, init_barrier = (
         mp.Value("i", 0),
         mp.Value("d", 0.0),
@@ -85,7 +96,7 @@ def main():
         mp.Barrier(parties=N),
     )
 
-    init_seed = 42#random.getrandbits(32)
+    init_seed = 42  # random.getrandbits(32)
 
     online_net.to(device)
     target_net.to(device)
@@ -93,7 +104,7 @@ def main():
     target_net.train()
     eval_net.eval()
 
-    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{'DDQN' if double_dqn else 'DQN'}{'_prioritized' if prioritized_memory else ''}_adam"
+    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{obs_mode}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{'DDQN' if double_dqn else 'DQN'}{'_prioritized' if prioritized_memory else ''}_adam"
     writer = SummaryWriter(f"D:/logs/{run_name}")
     workers = [
         Worker(

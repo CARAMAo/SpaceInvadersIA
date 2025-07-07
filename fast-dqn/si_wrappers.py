@@ -131,29 +131,6 @@ class DiscreteSI(gym.ObservationWrapper):
         return res
 
 
-class ImageSI(gym.ObservationWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.observation_space = gym.spaces.Box(
-            low=0, high=255, shape=(84, 84), dtype=np.uint8
-        )
-        self.last_obs = None
-
-    def observation(self, obs):
-        # grayscale
-        if self.last_obs is not None:
-            img = np.maximum(obs, self.last_obs)
-        else:
-            img = obs
-        self.last_obs = obs
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-
-        # rescale (84, 84)
-        img = cv2.resize(img, (84, 84))
-
-        return img
-
-
 class SIWrapper(gym.Wrapper):
     def __init__(
         self,
@@ -163,14 +140,9 @@ class SIWrapper(gym.Wrapper):
         normalize_reward=True,
         negative_reward=False,
         episodic_life=False,
-        obs_mode="",
     ):
-        if obs_mode == "frames":
-            super().__init__(ImageSI(env))
-            self.frame_stack = deque(maxlen=4)
 
-        else:
-            super().__init__(DiscreteSI(env))
+        super().__init__(DiscreteSI(env))
         self.player_is_exploding = False
         self.random_starts = random_starts
         self.shooting = False
@@ -178,7 +150,6 @@ class SIWrapper(gym.Wrapper):
         self.normalize_reward = normalize_reward
         self.negative_reward = negative_reward
         self.episodic_life = episodic_life
-        self.obs_mode = obs_mode
 
     def reset(self, *args, **kwargs):
         (state, info) = self.env.reset(*args, **kwargs)
@@ -191,17 +162,14 @@ class SIWrapper(gym.Wrapper):
         for i in range(noops):
             (state, _, _, _, info) = self.step(0)
 
-        self.frame_stack = deque([state] * 4, maxlen=4)
         return state, info
 
     def step(self, action):
-        frames = []
         obs, total_reward, terminated, truncated, info = None, 0.0, False, False, {}
         ale_interface = self.env.unwrapped.ale
 
         for t in range(self.frame_skip):
             obs, reward, terminated, truncated, info = self.env.step(action)
-            frames.append(obs)
             total_reward += reward
             hit = ale_interface.getRAM()[42] & 4
             invaded = (ale_interface.getRAM()[24] >> 7) & 1
@@ -219,9 +187,5 @@ class SIWrapper(gym.Wrapper):
             if not self.normalize_reward
             else max(-1.0, min(1.0, total_reward))
         )
-        if self.obs_mode == "frames":
-            max_frame = np.maximum.reduce(frames)
-            self.frame_stack.append(max_frame)
-            return [*self.frame_stack], total_reward, terminated, truncated, info
-        else:
-            return obs, total_reward, terminated, truncated, info
+
+        return obs, total_reward, terminated, truncated, info

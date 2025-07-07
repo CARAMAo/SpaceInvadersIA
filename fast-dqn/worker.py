@@ -1,5 +1,6 @@
 import gym
-import gym.wrappers
+from gym.wrappers.atari_preprocessing import AtariPreprocessing
+from gym.wrappers.frame_stack import FrameStack
 import torch
 import torch.multiprocessing as mp
 import numpy as np
@@ -27,9 +28,15 @@ class Worker(mp.Process):
         name,
     ):
         super(Worker, self).__init__(daemon=True)
-
-        self.env = gym.make("SpaceInvaders-ramNoFrameskip-v4")
-        self.env = SIWrapper(self.env, frame_skip=4, episodic_life=False)
+        if obs_mode == "frame":
+            self.env = gym.make("SpaceInvadersNoFrameskip-v4")
+            self.env = AtariPreprocessing(self.env)
+            self.env = FrameStack(self.env, 4)
+        else:
+            self.env = gym.make("SpaceInvaders-ramNoFrameskip-v4")
+            self.env = SIWrapper(
+                self.env, frame_skip=4, episodic_life=False, obs_mode="frames"
+            )
         self.init_barrier = init_barrier
         self.name = "w%i" % name
         self.global_ep, self.global_ep_r, self.global_step, self.res_queue = (
@@ -44,7 +51,6 @@ class Worker(mp.Process):
             optimizer,
         )
         self.init_seed = init_seed
-        self.frame_stack = deque([], maxlen=4)
         if prioritized_memory:
             self.memory = PrioritizedReplayMemory(memory_size)
         else:
@@ -112,9 +118,7 @@ class Worker(mp.Process):
             expected_state_action_values = (done * next_state_values * gamma) + r
 
         # Compute loss
-        criterion = torch.nn.MSELoss(
-            reduction="none"
-        )
+        criterion = torch.nn.MSELoss(reduction="none")
 
         losses = criterion(
             state_action_values, expected_state_action_values.unsqueeze(1)
@@ -173,7 +177,7 @@ class Worker(mp.Process):
             score = 0
             (state, _) = self.env.reset()
 
-            state = torch.Tensor(state).to(device).unsqueeze(0)
+            state = torch.Tensor(state.array()).to(device).unsqueeze(0)
 
             while not done:
 
@@ -183,7 +187,7 @@ class Worker(mp.Process):
 
                 done = term or trunc
 
-                next_state = torch.Tensor(next_state).to(device).unsqueeze(0)
+                next_state = torch.Tensor(next_state.array()).to(device).unsqueeze(0)
                 reward = torch.Tensor([reward]).to(device)
                 done_t = torch.Tensor([not done]).to(device)
                 self.memory.push(state, action, reward, next_state, done_t)
@@ -199,7 +203,7 @@ class Worker(mp.Process):
                     with self.global_step.get_lock():
                         self.global_step.value += 1
                         global_step = self.global_step.value
-                        #if global_step >= 20 * epoch_steps:
+                        # if global_step >= 20 * epoch_steps:
                         #    self.optimizer.param_groups[0]["lr"] = lr / (
                         #        10
                         #        * (
@@ -229,15 +233,15 @@ class Worker(mp.Process):
                     if done or steps % async_update_step == 0:
                         # s, a, r, s1, done_t = self.memory.sample(batch_size)
                         loss = self.optimize_model(beta=beta)
-                         
-                        #self.record(
+
+                        # self.record(
                         #    steps,
                         #    "loss",
                         #    epsilon=epsilon,
                         #    loss=loss,
                         #    lr=self.optimizer.param_groups[0]["lr"],
-                        #)
-                        #for g in self.optimizer.param_groups:
+                        # )
+                        # for g in self.optimizer.param_groups:
                         #    g["lr"] = lr * (1. - global_step / (max_epochs * epoch_steps))
 
                     if global_step % update_target == 0:

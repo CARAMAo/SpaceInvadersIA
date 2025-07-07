@@ -23,3 +23,5 @@ max_epochs = 100
 
 double_dqn = False
 prioritized_memory = False
+
+obs_mode = "frame"  # or 'custom_ram'
