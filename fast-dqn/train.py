@@ -75,8 +75,8 @@ def main():
     target_net.share_memory()
 
     N = mp.cpu_count()
-    # optimizer = SharedAdam(online_net.parameters(), lr=lr,eps=0.01,betas=(.95,.95))
-    optimizer = SharedRMSprop(online_net.parameters(), lr=lr)
+    optimizer = SharedAdam(online_net.parameters(), lr=lr)
+    #optimizer = SharedRMSprop(online_net.parameters(), lr=lr)
     global_ep, global_ep_r, global_step, res_queue, init_barrier = (
         mp.Value("i", 0),
         mp.Value("d", 0.0),
@@ -93,7 +93,7 @@ def main():
     target_net.train()
     eval_net.eval()
 
-    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{'DDQN' if double_dqn else 'DQN'}{'_prioritized' if prioritized_memory else ''}"
+    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{online_net.num_hidden}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{'DDQN' if double_dqn else 'DQN'}{'_prioritized' if prioritized_memory else ''}_adam"
     writer = SummaryWriter(f"D:/logs/{run_name}")
     workers = [
         Worker(

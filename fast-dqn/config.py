@@ -1,7 +1,7 @@
 import torch
 
 gamma = 0.99
-batch_size = 32
+batch_size = 128
 memory_size = 80_000
 pre_training = memory_size // 10
 lr = 1e-4
@@ -19,7 +19,7 @@ exploration_frames = 1_000_000  # global steps/frames
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 epoch_steps = 200_000
-max_epochs = 50
+max_epochs = 100
 
 double_dqn = False
 prioritized_memory = False

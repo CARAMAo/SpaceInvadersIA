@@ -29,7 +29,7 @@ class Worker(mp.Process):
         super(Worker, self).__init__(daemon=True)
 
         self.env = gym.make("SpaceInvaders-ramNoFrameskip-v4")
-        self.env = SIWrapper(self.env, frame_skip=4, episodic_life=True)
+        self.env = SIWrapper(self.env, frame_skip=4, episodic_life=False)
         self.init_barrier = init_barrier
         self.name = "w%i" % name
         self.global_ep, self.global_ep_r, self.global_step, self.res_queue = (
@@ -129,7 +129,7 @@ class Worker(mp.Process):
         self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
-        #torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
 
         if isinstance(self.memory, PrioritizedReplayMemory):
@@ -229,13 +229,16 @@ class Worker(mp.Process):
                     if done or steps % async_update_step == 0:
                         # s, a, r, s1, done_t = self.memory.sample(batch_size)
                         loss = self.optimize_model(beta=beta)
-                        self.record(
-                            steps,
-                            "loss",
-                            epsilon=epsilon,
-                            loss=loss,
-                            lr=self.optimizer.param_groups[0]["lr"],
-                        )
+                         
+                        #self.record(
+                        #    steps,
+                        #    "loss",
+                        #    epsilon=epsilon,
+                        #    loss=loss,
+                        #    lr=self.optimizer.param_groups[0]["lr"],
+                        #)
+                        #for g in self.optimizer.param_groups:
+                        #    g["lr"] = lr * (1. - global_step / (max_epochs * epoch_steps))
 
                     if global_step % update_target == 0:
                         self.update_target_model()
