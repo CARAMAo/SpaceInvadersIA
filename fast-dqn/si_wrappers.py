@@ -169,7 +169,9 @@ class SIWrapper(gym.Wrapper):
             invaded = (ale_interface.getRAM()[24] >> 7) & 1
             if hit or invaded:
                 if self.negative_reward:
-                    total_reward += -1.0
+                    total_reward = -1.0
+                else:
+                    total_reward = 0.0
                 if self.episodic_life:
                     terminated = True
 
