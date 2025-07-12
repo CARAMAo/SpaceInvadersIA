@@ -10,7 +10,7 @@ class QNet(nn.Module):
         super(QNet, self).__init__()
         self.num_inputs = num_inputs
         self.num_outputs = num_outputs
-        self.num_hidden = 256
+        self.num_hidden = 128
 
         self.fc1 = nn.Linear(num_inputs, self.num_hidden)
         self.fc2 = nn.Linear(self.num_hidden, self.num_hidden)
@@ -49,10 +49,10 @@ class CNNQNet(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=8, stride=4)
 
         self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
+        
+        self.conv3 = nn.Conv2d(64,64,kernel_size=3,stride=1)
 
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
-
-        self.fc4 = nn.Linear(7 * 7 * 64, 512)
+        self.fc4 = nn.Linear(64 * 7 * 7, 512)
         self.head = nn.Linear(512, n_actions)
         self.init()
 
@@ -66,11 +66,14 @@ class CNNQNet(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
+            elif isinstance(m, nn.Conv2d):
+                nn.init.kaiming_uniform_(m.weight,nonlinearity='relu')
 
     def forward(self, x):
         x = x.float() / 255
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = F.relu(self.fc4(x.view(x.size(0), -1)))
+        x = x.view(x.size(0), -1)
+        x = F.relu(self.fc4(x))
         return self.head(x)

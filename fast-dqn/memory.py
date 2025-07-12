@@ -1,25 +1,32 @@
 import random
 from collections import namedtuple, deque
 import numpy as np
+from torchrl.data import ReplayBuffer,LazyMemmapStorage
+from tensordict import TensorDict
+from config import batch_size,device
+import torch
 
 Transition = namedtuple(
     "Transition", ("state", "action", "reward", "next_state", "done")
 )
 
 
+scratch_dir = 'D:/dump/'
+
+def transform(x):
+    return {k:torch.cat(list(v.to(device))) for k,v in x.items()}
+
 class ReplayMemory(object):
 
-    def __init__(self, capacity):
-        self.memory = deque([], maxlen=capacity)
+    def __init__(self, capacity,path=''):
+        self.memory = ReplayBuffer(storage=LazyMemmapStorage(capacity,scratch_dir=scratch_dir+path),batch_size=batch_size,pin_memory=False,transform=transform)
 
     def push(self, *args):
-        self.memory.append(Transition(*args))
+        self.memory.add(Transition(*args)._asdict())
 
     def sample(self, batch_size=None):
-        if batch_size is None:
-            return zip(*self.memory)
-        else:
-            return zip(*random.sample(self.memory, batch_size))
+        sample = self.memory.sample(batch_size)
+        return sample.values()
 
     def __len__(self):
         return len(self.memory)

@@ -36,27 +36,34 @@ from config import (
     obs_mode,
 )
 
+import numpy as np
 
-def play_game(env, net, num_games=10):
-    avg_score = 0.0
+def play_game(env, net, num_games=30):
+    scores = []
+    q_values = []
+
     for i in range(num_games):
         state, _ = env.reset()
-        # frame_stack = deque([state]*4,maxlen=4)
-
-        state = torch.Tensor(state).to(device).unsqueeze(0)
+        total_reward = 0.
+        steps = 0
+        state = torch.Tensor(np.array(state)).to(device).unsqueeze(0)
         done = False
         while not done:
-            action = (
-                env.action_space.sample()
-                if np.random.rand() < 0.05
-                else net(state).max(1).indices.view(1, 1).item()
-            )
+            if np.random.rand() <= 0.001:
+                action = env.action_space.sample()
+            else:
+                q_value,indices = net(state).max(1)
+                q_values.append(q_value.item())
+                action = indices.item()
+            
             next_state, reward, term, trunc, _ = env.step(action)
             # frame_stack.append(next_state)
-            state = torch.Tensor(next_state).to(device).unsqueeze(0)
-            avg_score += reward
-            done = term or trunc
-    return avg_score / num_games
+            state = torch.Tensor(np.array(next_state)).to(device).unsqueeze(0)
+            total_reward += reward
+            steps += 1
+            done = term or trunc 
+        scores.append(total_reward)
+    return (np.mean(scores),np.max(scores),np.mean(q_values))
 
 
 def main():
@@ -67,18 +74,23 @@ def main():
     else:
         env = gym.make("SpaceInvaders-ramNoFrameskip-v4")
         env = SIWrapper(
-            env, normalize_reward=False, random_starts=False, obs_mode="frames"
+            env, normalize_reward=False, random_starts=False
         )
     # torch.manual_seed(500)
-    torch.multiprocessing.set_start_method("spawn")
+    #torch.multiprocessing.set_start_method("spawn")
     num_inputs = env.observation_space.shape
     num_actions = env.action_space.n
     print("state size:", num_inputs)
     print("action size:", num_actions)
     print(f"using {device.type}")
-    online_net = CNNQNet()
-    target_net = CNNQNet()
-    eval_net = CNNQNet()
+    if obs_mode == 'frame':
+        online_net = CNNQNet()
+        target_net = CNNQNet()
+        eval_net = CNNQNet()
+    else:
+        online_net = QNet(num_inputs[0],num_actions)
+        target_net = QNet(num_inputs[0],num_actions)
+        eval_net = QNet(num_inputs[0],num_actions)
     eval_net.to(device)
     target_net.load_state_dict(online_net.state_dict())
     eval_net.load_state_dict(online_net.state_dict())
@@ -86,8 +98,7 @@ def main():
     target_net.share_memory()
 
     N = mp.cpu_count()
-    # optimizer = SharedAdam(online_net.parameters(), lr=lr)
-    optimizer = SharedRMSprop(online_net.parameters(), lr=lr)
+    optimizer = SharedRMSprop(online_net.parameters(), lr=lr,alpha=0.95)
     global_ep, global_ep_r, global_step, res_queue, init_barrier = (
         mp.Value("i", 0),
         mp.Value("d", 0.0),
@@ -96,7 +107,7 @@ def main():
         mp.Barrier(parties=N),
     )
 
-    init_seed = 42  # random.getrandbits(32)
+    init_seed = 42 # random.getrandbits(32)
 
     online_net.to(device)
     target_net.to(device)
@@ -104,7 +115,7 @@ def main():
     target_net.train()
     eval_net.eval()
 
-    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{obs_mode}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{'DDQN' if double_dqn else 'DQN'}{'_prioritized' if prioritized_memory else ''}_adam"
+    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{obs_mode}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{'DDQN' if double_dqn else 'DQN'}{'_prioritized' if prioritized_memory else ''}"
     writer = SummaryWriter(f"D:/logs/{run_name}")
     workers = [
         Worker(
@@ -124,9 +135,11 @@ def main():
     ]
 
     [w.start() for w in workers]
-    score = play_game(env, online_net)
+    score,max_score,avg_q = play_game(env, online_net)
     writer.add_scalar("log/score", score, 0)
-    print("Training start, score:", score)
+    writer.add_scalar("log/max_score", max_score, 0)
+    writer.add_scalar("log/avg_q", avg_q, 0)
+    print("Training start, score:", score, "max",max_score,"Q:",avg_q)
     res = []
     while True:
         r = res_queue.get()
@@ -135,12 +148,14 @@ def main():
             [w_name, step, log_type, epsilon, loss, lr_log] = r
             if log_type == "epoch_end":
                 eval_net.load_state_dict(online_net.state_dict())
-                score = play_game(
+                score,max_score,avg_q = play_game(
                     env,
                     eval_net,
                 )
                 writer.add_scalar("log/score", score, step)
-                print(f"Epoch {step}: score {score} loss {loss}")
+                writer.add_scalar("log/max_score", max_score, step)
+                writer.add_scalar("log/avg_q", avg_q, step)
+                print(f"Epoch {step}: score {score} loss {loss}, avg. Q {avg_q}")
                 if not os.path.exists("D:/checkpoints/" + run_name):
                     os.makedirs("D:/checkpoints/" + run_name, exist_ok=True)
                 torch.save(

@@ -1,6 +1,7 @@
 import gym
 from gym.wrappers.atari_preprocessing import AtariPreprocessing
 from gym.wrappers.frame_stack import FrameStack
+from gym.wrappers import TransformReward
 import torch
 import torch.multiprocessing as mp
 import numpy as np
@@ -11,8 +12,12 @@ from copy import deepcopy
 from config import *
 from collections import deque
 
+def clip_reward(x):
+    return min(max(x,0.),1.)
 
 class Worker(mp.Process):
+
+
     def __init__(
         self,
         online_net,
@@ -30,12 +35,13 @@ class Worker(mp.Process):
         super(Worker, self).__init__(daemon=True)
         if obs_mode == "frame":
             self.env = gym.make("SpaceInvadersNoFrameskip-v4")
-            self.env = AtariPreprocessing(self.env)
+            self.env = AtariPreprocessing(self.env,terminal_on_life_loss=True)
             self.env = FrameStack(self.env, 4)
+            self.env = TransformReward(self.env,clip_reward)
         else:
             self.env = gym.make("SpaceInvaders-ramNoFrameskip-v4")
             self.env = SIWrapper(
-                self.env, frame_skip=4, episodic_life=False, obs_mode="frames"
+                self.env, frame_skip=4, episodic_life=True
             )
         self.init_barrier = init_barrier
         self.name = "w%i" % name
@@ -51,10 +57,7 @@ class Worker(mp.Process):
             optimizer,
         )
         self.init_seed = init_seed
-        if prioritized_memory:
-            self.memory = PrioritizedReplayMemory(memory_size)
-        else:
-            self.memory = ReplayMemory(memory_size)
+        self.memory_size = memory_size
 
     def record(self, steps, log_type, epsilon=None, loss=None, lr=None):
 
@@ -72,6 +75,7 @@ class Worker(mp.Process):
     def update_target_model(self):
         self.target_net.load_state_dict(self.online_net.state_dict())
 
+
     def optimize_model(self, beta=0.4):
 
         if len(self.memory) < batch_size:
@@ -81,19 +85,19 @@ class Worker(mp.Process):
             s, a, r, s1, done, indices, weights = self.memory.sample(
                 batch_size, beta=beta
             )
-            s = torch.cat(list(s))
-            a = torch.cat(list(a))
-            r = torch.cat(list(r))
-            s1 = torch.cat(list(s1))
-            done = torch.cat(list(done))
-            weights = torch.tensor(weights, device=device).unsqueeze(1)
+            s = torch.cat(list(s)).to(device)
+            a = torch.cat(list(a)).to(device)
+            r = torch.cat(list(r)).to(device)
+            s1 = torch.cat(list(s1)).to(device)
+            done = torch.cat(list(done)).to(device)
+            weights = torch.tensor(weights,device=device).unsqueeze(1)
         else:
             s, a, r, s1, done = self.memory.sample(batch_size)
-            s = torch.cat(list(s))
-            a = torch.cat(list(a))
-            r = torch.cat(list(r))
-            s1 = torch.cat(list(s1))
-            done = torch.cat(list(done))
+            #s = torch.cat(list(s)).to(device)
+            #a = torch.cat(list(a)).to(device)
+            #r = torch.cat(list(r)).to(device)
+            #s1 = torch.cat(list(s1)).to(device)
+            #done = torch.cat(list(done)).to(device)
             weights = None
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
@@ -133,7 +137,7 @@ class Worker(mp.Process):
         self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
-        torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 1.0)
+        torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
 
         if isinstance(self.memory, PrioritizedReplayMemory):
@@ -148,7 +152,7 @@ class Worker(mp.Process):
             )
             new_priorities = td_errors + 1e-6
             self.memory.update_priorities(indices, new_priorities.flatten())
-
+        del s,a,r,s1,done
         return loss_value
 
     def get_action(self, state, epsilon):
@@ -158,9 +162,13 @@ class Worker(mp.Process):
             )
         else:
             with torch.no_grad():
-                return self.online_net(state).max(1).indices.view(1, 1)
+                return self.online_net(state.to(device)).max(1).indices.view(1, 1)
 
     def run(self):
+        if prioritized_memory:
+            self.memory = PrioritizedReplayMemory(self.memory_size)
+        else:
+            self.memory = ReplayMemory(self.memory_size,self.name)
         epsilon = epsilon_start
         epsilon_min = np.random.choice(epsilon_end, p=epsilon_distribution)
         steps = 0
@@ -169,7 +177,7 @@ class Worker(mp.Process):
         self.online_net.init(seed=self.init_seed)
         self.target_net.init(seed=self.init_seed)
         self.init_barrier.wait()
-
+        curr_epoch = 0
         while global_step // epoch_steps < max_epochs:
 
             done = False
@@ -177,7 +185,7 @@ class Worker(mp.Process):
             score = 0
             (state, _) = self.env.reset()
 
-            state = torch.Tensor(state.array()).to(device).unsqueeze(0)
+            state = torch.Tensor(np.array(state)).unsqueeze(0)
 
             while not done:
 
@@ -187,31 +195,26 @@ class Worker(mp.Process):
 
                 done = term or trunc
 
-                next_state = torch.Tensor(next_state.array()).to(device).unsqueeze(0)
-                reward = torch.Tensor([reward]).to(device)
-                done_t = torch.Tensor([not done]).to(device)
+                next_state = torch.Tensor(np.array(next_state)).unsqueeze(0)
+                reward = torch.Tensor([reward])
+                done_t = torch.Tensor([not done])
                 self.memory.push(state, action, reward, next_state, done_t)
 
                 score += reward
-                # if done:
-                #     (state,_) = self.env.reset()
-                #     state = torch.Tensor(state).to(device).unsqueeze(0)
-                # else:
+
                 state = next_state
+                del next_state,done_t,reward,action
 
                 if len(self.memory) >= pre_training:
                     with self.global_step.get_lock():
                         self.global_step.value += 1
                         global_step = self.global_step.value
-                        # if global_step >= 20 * epoch_steps:
-                        #    self.optimizer.param_groups[0]["lr"] = lr / (
-                        #        10
-                        #        * (
-                        #            (global_step - 20 * epoch_steps)
-                        #            // (20 * epoch_steps)
-                        #            + 1
-                        #        )
-                        #    )
+                        if curr_epoch != global_step // epoch_steps:
+                            curr_epoch = global_step //epoch_steps
+                            #if curr_epoch == 30:
+                            #    for g in self.optimizer.param_groups:
+                            #        g['lr'] = g['lr']*.1
+
                         if global_step % epoch_steps == 0:
                             self.record(
                                 global_step // epoch_steps, "epoch_end", loss=loss
@@ -228,21 +231,20 @@ class Worker(mp.Process):
                     )
                     epsilon = max(epsilon, epsilon_min)
 
-                    beta = min(1.0, 0.4 + (global_step / (50 * epoch_steps)) * 0.6)
+                    #beta = min(1.0, 0.4 + (global_step / (50 * epoch_steps)) * 0.6)
 
                     if done or steps % async_update_step == 0:
                         # s, a, r, s1, done_t = self.memory.sample(batch_size)
-                        loss = self.optimize_model(beta=beta)
+                        loss = self.optimize_model()
 
-                        # self.record(
-                        #    steps,
-                        #    "loss",
-                        #    epsilon=epsilon,
-                        #    loss=loss,
-                        #    lr=self.optimizer.param_groups[0]["lr"],
-                        # )
-                        # for g in self.optimizer.param_groups:
-                        #    g["lr"] = lr * (1. - global_step / (max_epochs * epoch_steps))
+                        self.record(
+                            steps,
+                            "loss",
+                            epsilon=epsilon,
+                            loss=loss,
+                            lr=self.optimizer.param_groups[0]["lr"],
+                        )
+
 
                     if global_step % update_target == 0:
                         self.update_target_model()
