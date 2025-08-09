@@ -14,7 +14,8 @@ class QNet(nn.Module):
 
         self.fc1 = nn.Linear(num_inputs, self.num_hidden)
         self.fc2 = nn.Linear(self.num_hidden, self.num_hidden)
-        self.fc3 = nn.Linear(self.num_hidden, num_outputs)
+        self.fc3 = nn.Linear(self.num_hidden, self.num_hidden)
+        self.fc4 = nn.Linear(self.num_hidden, num_outputs)
 
         self.init()
 
@@ -32,25 +33,20 @@ class QNet(nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        qvalue = self.fc3(x)
+        x = F.relu(self.fc3(x))
+        qvalue = self.fc4(x)
         return qvalue
 
 
 class CNNQNet(nn.Module):
     def __init__(self, in_channels=4, n_actions=6):
-        """
-        Initialize Deep Q Network
 
-        Args:
-            in_channels (int): number of input channels
-            n_actions (int): number of outputs
-        """
         super(CNNQNet, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=8, stride=4)
+        self.conv1 = nn.Conv2d(in_channels, 16, kernel_size=8, stride=4)
 
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2)
         
-        self.conv3 = nn.Conv2d(64,64,kernel_size=3,stride=1)
+        self.conv3 = nn.Conv2d(32,64,kernel_size=3,stride=1)
 
         self.fc4 = nn.Linear(64 * 7 * 7, 512)
         self.head = nn.Linear(512, n_actions)

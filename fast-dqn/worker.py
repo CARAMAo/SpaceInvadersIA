@@ -93,11 +93,11 @@ class Worker(mp.Process):
             weights = torch.tensor(weights,device=device).unsqueeze(1)
         else:
             s, a, r, s1, done = self.memory.sample(batch_size)
-            #s = torch.cat(list(s)).to(device)
-            #a = torch.cat(list(a)).to(device)
-            #r = torch.cat(list(r)).to(device)
-            #s1 = torch.cat(list(s1)).to(device)
-            #done = torch.cat(list(done)).to(device)
+            s = torch.cat(list(s)).to(device)
+            a = torch.cat(list(a)).to(device)
+            r = torch.cat(list(r)).to(device)
+            s1 = torch.cat(list(s1)).to(device)
+            done = torch.cat(list(done)).to(device)
             weights = None
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
@@ -137,7 +137,7 @@ class Worker(mp.Process):
         self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
-        torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(self.online_net.parameters(), 1.0)
         self.optimizer.step()
 
         if isinstance(self.memory, PrioritizedReplayMemory):
@@ -155,6 +155,37 @@ class Worker(mp.Process):
         del s,a,r,s1,done
         return loss_value
 
+    def optimize_model_sarsa(self, transitions_batch):
+        # Unpack batch: list of (s, a, r, s', a', done)
+        states, actions, rewards, next_states, next_actions, dones = zip(*transitions_batch)
+
+        # Convert lists to tensors
+        states = torch.cat(states).to(device)
+        actions = torch.cat(actions).to(device)
+        rewards = torch.cat(rewards).to(device)
+        next_states = torch.cat(next_states).to(device)
+        next_actions = torch.cat(next_actions).to(device)
+        dones = torch.cat(dones).to(device)
+
+        # Q(s, a)
+        q_pred = self.online_net(states).gather(1, actions)
+
+        with torch.no_grad():
+            q_next = self.online_net(next_states).gather(1, next_actions)
+
+        target = rewards + gamma * q_next.squeeze(1) * dones
+
+        criterion = torch.nn.MSELoss()
+        loss = criterion(q_pred.squeeze(1), target)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_value_(self.online_net.parameters(), 1.0)
+        self.optimizer.step()
+
+        return loss.item()
+
+
     def get_action(self, state, epsilon):
         if np.random.rand() <= epsilon:
             return torch.tensor(
@@ -168,7 +199,7 @@ class Worker(mp.Process):
         if prioritized_memory:
             self.memory = PrioritizedReplayMemory(self.memory_size)
         else:
-            self.memory = ReplayMemory(self.memory_size,self.name)
+            self.memory = ReplayMemory(self.memory_size)
         epsilon = epsilon_start
         epsilon_min = np.random.choice(epsilon_end, p=epsilon_distribution)
         steps = 0
@@ -178,6 +209,7 @@ class Worker(mp.Process):
         self.target_net.init(seed=self.init_seed)
         self.init_barrier.wait()
         curr_epoch = 0
+        sarsa_batch = []
         while global_step // epoch_steps < max_epochs:
 
             done = False
@@ -198,23 +230,26 @@ class Worker(mp.Process):
                 next_state = torch.Tensor(np.array(next_state)).unsqueeze(0)
                 reward = torch.Tensor([reward])
                 done_t = torch.Tensor([not done])
-                self.memory.push(state, action, reward, next_state, done_t)
+                next_action = self.get_action(next_state, epsilon)
+
+                if sarsa:
+                    sarsa_batch.append((state, action, reward, next_state, next_action, done_t))
+                else:
+                    self.memory.push(state, action, reward, next_state, done_t)
+                
 
                 score += reward
 
                 state = next_state
-                del next_state,done_t,reward,action
 
-                if len(self.memory) >= pre_training:
+                if sarsa or len(self.memory) >= pre_training:
                     with self.global_step.get_lock():
                         self.global_step.value += 1
                         global_step = self.global_step.value
                         if curr_epoch != global_step // epoch_steps:
                             curr_epoch = global_step //epoch_steps
-                            #if curr_epoch == 30:
-                            #    for g in self.optimizer.param_groups:
-                            #        g['lr'] = g['lr']*.1
 
+                        
                         if global_step % epoch_steps == 0:
                             self.record(
                                 global_step // epoch_steps, "epoch_end", loss=loss
@@ -231,11 +266,17 @@ class Worker(mp.Process):
                     )
                     epsilon = max(epsilon, epsilon_min)
 
-                    #beta = min(1.0, 0.4 + (global_step / (50 * epoch_steps)) * 0.6)
 
                     if done or steps % async_update_step == 0:
                         # s, a, r, s1, done_t = self.memory.sample(batch_size)
-                        loss = self.optimize_model()
+                        if sarsa:
+                            if sarsa_batch:
+                                loss = self.optimize_model_sarsa(sarsa_batch)
+                                sarsa_batch.clear()
+                        else:
+                            loss = self.optimize_model()
+
+
 
                         self.record(
                             steps,
@@ -249,6 +290,5 @@ class Worker(mp.Process):
                     if global_step % update_target == 0:
                         self.update_target_model()
 
-            # score = score if score == 500.0 else score + 1
 
         self.res_queue.put(None)

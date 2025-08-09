@@ -21,7 +21,7 @@ addresses = dict(
     missile1_x=83,  # invader shot 1 x coordinate
     missile2_y=82,  # invader shot 2 y coordinate
     missile2_x=84,  # invader shot 2 x coordinate
-    # spaceship_x=30,
+    #spaceship_x=30,
     # obstacles=[43,70], #3 sequences of 9 bytes representing each one the obstacle pixels (0 destroyed, 1 intact),
     # (relevant bits are only 56 out of 72(9 * 8 bits) total, we could save 2 bytes for each obstacle representation
     # this would shrink the possible states for obstacles from 2^216 to 2^168)
@@ -87,7 +87,7 @@ def invaders_speed_mapping(num_invaders):
 class DiscreteSI(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.observation_space = Box(low=0.0, high=1.0, shape=(71,), dtype=np.float32)
+        self.observation_space = Box(low=0.0, high=1.0, shape=(70,), dtype=np.float32)
 
     def observation(self, obs):
 
@@ -114,11 +114,11 @@ class DiscreteSI(gym.ObservationWrapper):
         res.append(-speed if (obs[24] >> 1) & 1 == 0 else speed)
 
         # spaceship direction
-        # res.append(-1.0 if obs[24] & 1 == 0 else 1.0)
+        #res.append(-1.0 if obs[24] & 1 == 0 else 1.0)
 
         # res.append(0.0 if obs[77] & 0b11 > 0 else 1.0)  # shooting
 
-        res.append(1.0 if obs[42] == 0 else 0.0)  # player state : playing/paused
+        #res.append(1.0 if obs[42] == 0 else 0.0)  # player state : playing/paused
 
         if obstacles_showing:
             for i in range(3):

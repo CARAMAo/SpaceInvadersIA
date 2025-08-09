@@ -34,6 +34,7 @@ from config import (
     double_dqn,
     prioritized_memory,
     obs_mode,
+    sarsa
 )
 
 import numpy as np
@@ -49,7 +50,7 @@ def play_game(env, net, num_games=30):
         state = torch.Tensor(np.array(state)).to(device).unsqueeze(0)
         done = False
         while not done:
-            if np.random.rand() <= 0.001:
+            if np.random.rand() <= 0.01:
                 action = env.action_space.sample()
             else:
                 q_value,indices = net(state).max(1)
@@ -98,7 +99,7 @@ def main():
     target_net.share_memory()
 
     N = mp.cpu_count()
-    optimizer = SharedRMSprop(online_net.parameters(), lr=lr,alpha=0.95)
+    optimizer = SharedRMSprop(online_net.parameters(), lr=lr)
     global_ep, global_ep_r, global_step, res_queue, init_barrier = (
         mp.Value("i", 0),
         mp.Value("d", 0.0),
@@ -107,7 +108,7 @@ def main():
         mp.Barrier(parties=N),
     )
 
-    init_seed = 42 # random.getrandbits(32)
+    init_seed = random.getrandbits(32)
 
     online_net.to(device)
     target_net.to(device)
@@ -115,7 +116,7 @@ def main():
     target_net.train()
     eval_net.eval()
 
-    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{obs_mode}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{'DDQN' if double_dqn else 'DQN'}{'_prioritized' if prioritized_memory else ''}"
+    run_name = f"{lr}_{async_update_step}_{batch_size}_{memory_size}_{obs_mode}_{datetime.now().strftime('%d-%m-%y-%H-%M-%S')}_{update_target}_{'DDQN' if double_dqn else 'DQN'}{'_prioritized' if prioritized_memory else ''}{'_sarsa' if sarsa else ''}"
     writer = SummaryWriter(f"D:/logs/{run_name}")
     workers = [
         Worker(

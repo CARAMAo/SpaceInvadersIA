@@ -11,7 +11,7 @@ import numpy as np
 
 device = torch.device('cuda')
 
-def play_game(env, net, num_games=100):
+def play_game(env, net, num_games=1000):
     scores = []
     best_frames = []
     max_score = 0
@@ -25,7 +25,7 @@ def play_game(env, net, num_games=100):
         while not done:
             action = (
                 env.action_space.sample()
-                if np.random.rand() < 0.05
+                if np.random.rand() < 1.0
                 else net(state).max(1).indices.view(1, 1).item()
             )
             next_state, reward, term, trunc, _ = env.step(action)
@@ -43,13 +43,15 @@ def play_game(env, net, num_games=100):
 
 if __name__ == "__main__":
     checkpoint = torch.load(sys.argv[1], map_location="cuda")
-    obs_mode = "cc"
+    obs_mode = "frame"
 
     if obs_mode == "frame":
         env = gym.make("SpaceInvadersNoFrameskip-v4", render_mode="rgb_array")
+        env.metadata['render_fps'] = 120
+        env = gym.wrappers.RenderCollection(env,pop_frames=False)
         env = gym.wrappers.atari_preprocessing.AtariPreprocessing(env)
         env = gym.wrappers.frame_stack.FrameStack(env, 4)
-        env = gym.wrappers.RenderCollection(env,pop_frames=False)
+        
         net = CNNQNet()
     else:
         env = gym.make("SpaceInvaders-ramNoFrameskip-v4", render_mode="rgb_array")
@@ -73,7 +75,12 @@ if __name__ == "__main__":
     net.eval()
     net.to(torch.device("cuda"))
 
-    _,_,frames = play_game(env,net)
-    for frame in frames:
-        cv2.imshow("SI",frame)
-        cv2.waitKey(1)
+    mean,best,frames = play_game(env,net)
+    print("avg score:",mean,"best score:",best)
+    if frames:
+        height, width, _ = frames[0].shape
+        out = cv2.VideoWriter("best_episode.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 120, (width, height))
+        for frame in frames:
+            bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # Converti da RGB a BGR per OpenCV
+            out.write(bgr)
+        out.release()
